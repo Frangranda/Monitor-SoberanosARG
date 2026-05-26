@@ -6,6 +6,9 @@ on:
     # Solo días de semana (lunes a viernes)
     - cron: '0 21 * * 1-5'
   workflow_dispatch: # Permite ejecución manual desde GitHub
+
+permissions:
+  contents: write
  
 jobs:
   actualizar:
