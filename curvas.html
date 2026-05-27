@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Curvas de Rendimiento</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f0f4f8;
+    --surface: #ffffff;
+    --card: #f8fafc;
+    --border: #d1d9e0;
+    --text: #1a2332;
+    --text-2: #3a4a5c;
+    --text-3: #7a8fa0;
+    --navy: #0d1f4e;
+    --navy-light: #1a3270;
+    --mono: 'JetBrains Mono','Fira Code','Courier New',monospace;
+    --sans: 'Inter',system-ui,sans-serif;
+  }
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; padding: 0; }
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 0 24px 24px; }
+
+  /* NAVBAR */
+  .navbar { background: var(--navy); padding: 0 32px; height: 56px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 0; }
+  .navbar-brand { display: flex; align-items: center; gap: 16px; }
+  .navbar-logo { font-size: 20px; font-weight: 700; color: #ffffff; letter-spacing: 0.05em; font-family: var(--sans); }
+  .navbar-sep { width: 1px; height: 20px; background: rgba(255,255,255,0.2); }
+  .navbar-title { font-size: 11px; color: rgba(255,255,255,0.6); font-family: var(--mono); letter-spacing: 0.1em; text-transform: uppercase; }
+
+  /* TABS */
+  .nav-tabs { display: flex; gap: 4px; padding: 0; border-bottom: 2px solid var(--border); margin: 20px 0 20px 0; }
+  .nav-tab { font-size: 11px; font-family: var(--mono); font-weight: 600; letter-spacing: .05em; padding: 8px 20px; border-radius: 6px 6px 0 0; cursor: pointer; border: 1px solid transparent; color: var(--text-3); background: transparent; transition: all .15s; text-transform: uppercase; text-decoration: none; display: block; }
+  .nav-tab:hover { color: var(--navy); background: var(--bg); }
+  .nav-tab.active { color: var(--navy); background: var(--surface); border-color: var(--border); border-bottom-color: transparent; margin-bottom: -2px; font-weight: 700; }
+
+  /* CONTROLES */
+  .controles { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; margin-bottom: 20px; display: flex; align-items: center; gap: 24px; flex-wrap: wrap; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+  .controles-title { font-size: 10px; font-weight: 600; letter-spacing: .10em; text-transform: uppercase; color: var(--text-3); font-family: var(--mono); white-space: nowrap; }
+  .familia-btn { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 6px 14px; border-radius: 20px; border: 2px solid; font-size: 11px; font-family: var(--mono); font-weight: 600; letter-spacing: .05em; text-transform: uppercase; transition: all .15s; user-select: none; }
+  .familia-btn.off { opacity: 0.35; }
+  .familia-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  /* GRAFICO */
+  .chart-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); position: relative; min-height: 500px; }
+  .no-data { display: flex; align-items: center; justify-content: center; height: 400px; font-size: 13px; color: var(--text-3); font-family: var(--mono); font-style: italic; }
+</style>
+</head>
+<body>
+
+<nav class="navbar">
+  <div class="navbar-brand">
+    <div class="navbar-logo">BALANZ</div>
+    <div class="navbar-sep"></div>
+    <div class="navbar-title">Monitor · Renta Fija AR</div>
+  </div>
+</nav>
+
+<div class="wrap">
+  <div class="nav-tabs">
+    <a class="nav-tab" href="bonos.html">Monitor</a>
+    <a class="nav-tab active" href="curvas.html">Curvas</a>
+  </div>
+
+  <div class="controles">
+    <div class="controles-title">Familias</div>
+    <div id="filtros"></div>
+  </div>
+
+  <div class="chart-wrap">
+    <div id="no-data" class="no-data" style="display:none">Abrí el Monitor primero para cargar los precios.</div>
+    <canvas id="chart"></canvas>
+  </div>
+</div>
+
+<script>
+const FAMILIAS = [
+  { key: 'lecap',      label: 'LECAPs',       color: '#16a34a' },
+  { key: 'tasafija',   label: 'Tasa Fija',    color: '#1d6fa5' },
+  { key: 'cer',        label: 'CER',          color: '#0d9488' },
+  { key: 'tamar',      label: 'TAMAR',        color: '#7c3aed' },
+  { key: 'usdlinked',  label: 'USD Linked',   color: '#b45309' },
+  { key: 'usdbonares', label: 'USD Bonares',  color: '#dc2626' },
+  { key: 'usdglobales',label: 'USD Globales', color: '#0d1f4e' },
+  { key: 'usdbopreal', label: 'USD Bopreales',color: '#6b7280' },
+  { key: 'dual',       label: 'Duales',       color: '#db2777' },
+];
+
+let activos = new Set(FAMILIAS.map(f => f.key));
+let chartInstance = null;
+
+// ── CARGAR DATOS ──────────────────────────────────────────────
+function cargarDatos() {
+  try {
+    const raw = localStorage.getItem('bonos_data');
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch { return null; }
+}
+
+// ── FILTROS ───────────────────────────────────────────────────
+function renderFiltros(datos) {
+  const container = document.getElementById('filtros');
+  container.style.display = 'flex';
+  container.style.gap = '8px';
+  container.style.flexWrap = 'wrap';
+
+  FAMILIAS.forEach(f => {
+    const tiene = datos.some(d => d.grupo === f.key);
+    if (!tiene) return;
+
+    const btn = document.createElement('div');
+    btn.className = 'familia-btn';
+    btn.style.borderColor = f.color;
+    btn.style.color = f.color;
+    btn.innerHTML = `<span class="familia-dot" style="background:${f.color}"></span>${f.label}`;
+    btn.dataset.key = f.key;
+
+    btn.addEventListener('click', () => {
+      if (activos.has(f.key)) activos.delete(f.key);
+      else activos.add(f.key);
+      btn.classList.toggle('off', !activos.has(f.key));
+      renderGrafico(datos);
+    });
+
+    container.appendChild(btn);
+  });
+}
+
+// ── GRAFICO ───────────────────────────────────────────────────
+function renderGrafico(datos) {
+  const canvas = document.getElementById('chart');
+  const noData = document.getElementById('no-data');
+
+  const datasets = FAMILIAS
+    .filter(f => activos.has(f.key))
+    .map(f => {
+      const puntos = datos
+        .filter(d => d.grupo === f.key && d.md !== null && d.tea !== null)
+        .map(d => ({ x: parseFloat(d.md.toFixed(2)), y: parseFloat(d.tea.toFixed(2)), ticker: d.ticker }))
+        .sort((a, b) => a.x - b.x);
+
+      if (!puntos.length) return null;
+
+      return {
+        label: f.label,
+        data: puntos,
+        borderColor: f.color,
+        backgroundColor: f.color + '22',
+        pointBackgroundColor: f.color,
+        pointRadius: 5,
+        pointHoverRadius: 7,
+        borderWidth: 2,
+        tension: 0.3,
+        showLine: true,
+      };
+    })
+    .filter(Boolean);
+
+  if (chartInstance) chartInstance.destroy();
+
+  if (!datasets.length) {
+    canvas.style.display = 'none';
+    noData.style.display = 'flex';
+    noData.textContent = 'No hay datos para mostrar.';
+    return;
+  }
+
+  canvas.style.display = 'block';
+  noData.style.display = 'none';
+
+  chartInstance = new Chart(canvas, {
+    type: 'scatter',
+    data: { datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'nearest', intersect: false },
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: { font: { family: 'JetBrains Mono', size: 11 }, padding: 16 }
+        },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const p = ctx.raw;
+              return `${p.ticker}  MD: ${p.x}  TEA: ${p.y}%`;
+            }
+          },
+          bodyFont: { family: 'JetBrains Mono', size: 11 },
+        }
+      },
+      scales: {
+        x: {
+          title: { display: true, text: 'Duration Modificada (años)', font: { family: 'JetBrains Mono', size: 11 } },
+          grid: { color: '#e5e7eb' },
+          ticks: { font: { family: 'JetBrains Mono', size: 10 } }
+        },
+        y: {
+          title: { display: true, text: 'TEA %', font: { family: 'JetBrains Mono', size: 11 } },
+          grid: { color: '#e5e7eb' },
+          ticks: { font: { family: 'JetBrains Mono', size: 10 }, callback: v => v + '%' }
+        }
+      }
+    }
+  });
+}
+
+// ── INIT ──────────────────────────────────────────────────────
+const datos = cargarDatos();
+if (!datos || !datos.length) {
+  document.getElementById('no-data').style.display = 'flex';
+  document.getElementById('chart').style.display = 'none';
+} else {
+  renderFiltros(datos);
+  renderGrafico(datos);
+}
+</script>
+</body>
+</html>
