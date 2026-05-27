@@ -25,7 +25,7 @@ TICKERS = [
     "TZV26", "D30S6", "TZV27", "TZV28",
     "AO27D", "AO28D", "AL29D", "AN29D", "AL30D", "AL35D", "AE38D", "AL41D",
     "GD29D", "GD30D", "GD35D", "GD38D", "GD41D", "GD46D",
-    "BPOC7", "BPOD7", "BPOA8", "BPOB8",
+    "BPC7D", "BPD7D", "BPA8D", "BPB8D",
     "TXMJ8", "TXMJ9", "TTJ26", "TTS26",
 ]
 
