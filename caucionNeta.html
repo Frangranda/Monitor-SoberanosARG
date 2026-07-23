@@ -52,12 +52,12 @@
   input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 
   .params { margin-top: 6px; }
-  .params summary { font-size: 10px; font-family: var(--mono); color: var(--text-3); letter-spacing: .06em; text-transform: uppercase; cursor: pointer; padding: 6px 0; user-select: none; }
-  .params summary:hover { color: var(--text-2); }
+  .params-title { font-size: 10px; font-family: var(--mono); color: var(--text-3); letter-spacing: .06em; text-transform: uppercase; padding: 6px 0; }
   .param-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
   .param-row label { font-size: 10px; color: var(--text-3); font-family: var(--mono); flex: 1; }
   .inp-sm { background: var(--bg); border: 1px solid var(--border-l); border-radius: 5px; color: var(--text-2); font-family: var(--mono); font-size: 12px; text-align: right; width: 90px; padding: 5px 8px; }
   .inp-sm:focus { outline: none; border-color: var(--blue); }
+  .inp-sm[readonly] { opacity: .6; cursor: not-allowed; background: var(--card); }
 
   /* Desglose de resultados */
   .result-table { width: 100%; border-collapse: collapse; }
@@ -118,7 +118,7 @@
       <div class="card-body">
         <div class="field">
           <label>Monto contado ($)</label>
-          <input class="inp" id="monto" type="number" step="1000" value="7085000" oninput="calc()">
+          <input class="inp" id="monto" type="number" step="1000" value="10000000" oninput="calc()">
         </div>
         <div class="field">
           <label>Tasa (TNA %)</label>
@@ -126,17 +126,17 @@
         </div>
         <div class="field">
           <label>Días</label>
-          <input class="inp" id="dias" type="number" step="1" value="3" oninput="calc()">
+          <input class="inp" id="dias" type="number" step="1" value="1" oninput="calc()">
         </div>
 
-        <details class="params">
-          <summary>Parámetros de costos ▾</summary>
+        <div class="params">
+          <div class="params-title">Parámetros de costos</div>
           <div class="param-row"><label>Arancel (%)</label><input class="inp-sm" id="arancel" type="number" step="0.001" value="0.5" oninput="calc()"></div>
           <div class="param-row"><label>Derecho de mercado (%)</label><input class="inp-sm" id="mercado" type="number" step="0.001" value="0.03" oninput="calc()"></div>
           <div class="param-row"><label>Derecho de bolsa (%)</label><input class="inp-sm" id="bolsa" type="number" step="0.001" value="0.015" oninput="calc()"></div>
-          <div class="param-row"><label>IVA (%)</label><input class="inp-sm" id="iva" type="number" step="1" value="21" oninput="calc()"></div>
-          <div class="param-row"><label>Prorrateo (días)</label><input class="inp-sm" id="prorrateo" type="number" step="1" value="90" oninput="calc()"></div>
-        </details>
+          <div class="param-row"><label>IVA (%)</label><input class="inp-sm" id="iva" type="number" step="1" value="21" readonly></div>
+          <div class="param-row"><label>Prorrateo (días)</label><input class="inp-sm" id="prorrateo" type="number" step="1" value="90" readonly></div>
+        </div>
       </div>
     </div>
 
