@@ -1136,7 +1136,7 @@ const COLS = [
   { k:'ticker',  label:'Ticker',      w:7.0,  left:true, get:f=>f.inst.ticker,     cell:f=>`<td class="td-ticker">${f.inst.ticker}</td>` },
   { k:'nombre',  label:'Nombre',      w:11.0, left:true, get:f=>f.inst.nombre||'', cell:f=>`<td class="td-nombre">${f.inst.nombre||''}</td>` },
   { k:'industria', label:'Industria', w:10.5, left:true, get:f=>industriaDe(f.inst), cell:f=>`<td class="td-nombre">${industriaDe(f.inst)}</td>` },
-  { k:'divisa',  label:'Divisa',      w:6.8,  left:true, get:f=>f.inst.divisa||'', cell:f=>`<td>${f.inst.divisa||'—'}</td>` },
+  { k:'divisa',  label:'Divisa de pago', w:8.0, left:true, get:f=>f.inst.divisa||'', cell:f=>`<td>${f.inst.divisa||'—'}</td>` },
   { k:'precio',  label:'Precio',      w:9.2,  get:f=>f.m.precio, cell:f=>`<td><input class="precio-cell-input${f.m.precio?' has-value':''}" id="inp-${f.inst.ticker}" type="number" step="0.01" placeholder="—" value="${f.m.precio?f.m.precio.toFixed(2):''}" oninput="onPrecioChange('${f.inst.ticker}', this.value)"></td>` },
   { k:'ultop',   label:'Últ. op.',    w:9.0,  get:f=>actUltOpMs(f.inst.ticker), cell:f=>`<td style="font-size:11px">${fmtUltOp(actUltOp(f.inst.ticker))}</td>` },
   { k:'voldia',  label:'Vol. día (nom)', w:8.5, get:f=>actVol(f.inst.ticker), cell:f=>`<td>${(()=>{const v=actVol(f.inst.ticker);return v==null?'<span class="no-p">—</span>':fmtMiles(v);})()}</td>` },
@@ -2071,7 +2071,7 @@ async function autoAgregarLiquidos() {
         ticker: tkMon,
         nombre: `${(x.emisor || x.ticker)} ${anio} ⚡`.trim(),  // ⚡ = auto (1816, sin cash flow)
         venc: (x.venc || '').slice(0, 10),
-        divisa: 'USD',
+        divisa: '',                 // MEP/CCL se resuelve al scrapear (domicilio_pago); hasta ahí "—"
         emisor: x.emisor || null,   // para la columna Industria
         auto: true,
       });
