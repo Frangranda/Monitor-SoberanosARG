@@ -1143,6 +1143,8 @@ const COLS = [
   { k:'venc',    label:'Vencimiento', w:9.3,  get:f=>f.dias,     cell:f=>`<td>${fmtDate(f.inst.venc)}</td>` },
   { k:'dias',    label:'Días',        w:5.6,  get:f=>f.dias,     cell:f=>`<td>${f.m.dias!==null?`<span class="${f.m.dias<30?'val-red':''}">${f.m.dias}d</span>`:'—'}</td>` },
   { k:'md',      label:'M. Dur.',     w:6.4,  get:f=>f.m.md,      cell:f=>`<td>${dash(f.m.md,1)}</td>` },
+  { k:'period',  label:'Periodicidad', w:9.0, left:true, get:f=>periodicidadDe(f.inst), cell:f=>`<td class="td-nombre">${periodicidadDe(f.inst)}</td>` },
+  { k:'amort',   label:'Amortización', w:10.0, left:true, get:f=>tipoAmortDe(f.inst), cell:f=>`<td class="td-nombre">${tipoAmortDe(f.inst)}</td>` },
   { k:'tna',     label:'TNA %',       w:6.4,  get:f=>f.m.tna,     cell:f=>`<td>${dash(f.m.tna,2,'%','val-blue')}</td>` },
   { k:'tea',     label:'TEA %',       w:6.7,  get:f=>f.m.tea,     cell:f=>`<td>${dash(f.m.tea,2,'%','val-cyan')}</td>` },
   { k:'paridad', label:'Paridad %',   w:8.0,  get:f=>f.m.paridad, cell:f=>`<td>${dash(f.m.paridad,2,'%','val-text3')}</td>` },
@@ -2013,6 +2015,23 @@ function emisorDe(inst){
   return _emisorPorTicker[String(o || '').toUpperCase()] || null;
 }
 function industriaDe(inst){ const e = emisorDe(inst); return e ? (INDUSTRIA[e] || '—') : '—'; }
+
+// Periodicidad de cupón y tipo de amortización — derivadas del cronograma de flujos (sin scrapear).
+// Un ON sin flujos cargados (⚡) muestra "—".
+const PERIODICIDAD = { 1:'Anual', 2:'Semestral', 3:'Cuatrimestral', 4:'Trimestral', 6:'Bimestral', 12:'Mensual' };
+function periodicidadDe(inst){
+  const fl = inst.flujosAll || inst.flujos;
+  if (!fl || !fl.some(f => (f.renta||0) > 0)) return '—';
+  const m = frecuenciaCupon(inst);
+  return PERIODICIDAD[m] || (m + '/año');
+}
+function tipoAmortDe(inst){
+  const fl = inst.flujosAll || inst.flujos;
+  if (!fl || !fl.length) return '—';
+  const cuotas = fl.filter(f => (f.amort||0) > 0).length;
+  if (!cuotas) return '—';
+  return cuotas === 1 ? 'Bullet' : `Amortizable (${cuotas})`;
+}
 
 // ── AUTO-ADD de ONs líquidas nuevas ───────────────────────────
 // Incluye automáticamente ONs que 1816 lista y el Excel no tiene, si son nuevas (emitidas en
