@@ -117,6 +117,14 @@
   .col-header-row th:hover { color: var(--navy); }
   .col-header-row th.sorted { color: var(--navy); }
   .sort-arrow { color: var(--cyan); font-weight: 700; }
+  /* Handle para redimensionar columnas (drag en el borde derecho del header) */
+  .col-resize { position: absolute; top: 0; right: 0; width: 7px; height: 100%; cursor: col-resize; }
+  .col-resize:hover { background: var(--cyan); opacity: .45; }
+  /* Fila de filtros por columna (debajo del header) */
+  .filtro-row th { position: sticky; top: 56px; z-index: 3; padding: 2px 3px; background: var(--card); box-shadow: inset 0 -1px 0 var(--border); }
+  .filtro-input { width: 100%; box-sizing: border-box; font-size: 10px; padding: 2px 5px; border: 1px solid var(--border); border-radius: 3px; font-family: var(--mono); color: var(--text); background: var(--surface); }
+  .filtro-input:focus { outline: none; border-color: var(--cyan); }
+  .filtro-input::placeholder { color: var(--text-3); opacity: .7; }
 
   /* FILAS NORMALES */
   tbody tr.data-row { border-bottom: 1px solid var(--border); transition: background .1s; }
@@ -1143,7 +1151,60 @@ const COLS = [
   { k:'mtd',     label:'MTD %',       w:6.1,  get:f=>f.mtd, cell:f=>`<td>${renderVariacion(f.mtd)}</td>` },
   { k:'ytd',     label:'YTD %',       w:6.7,  get:f=>f.ytd, cell:f=>`<td>${renderVariacion(f.ytd)}</td>` },
 ];
-const COLGROUP = COLS.map(c => `<col style="width:${c.w}%">`).join('');
+// Anchos de columna EDITABLES (drag en el borde del header). Persisten en localStorage.
+let colWidths = COLS.map(c => c.w);
+try { const s = JSON.parse(localStorage.getItem('ons_col_widths') || 'null'); if (Array.isArray(s) && s.length === COLS.length) colWidths = s; } catch { /* default */ }
+function colgroupHTML(){ return colWidths.map(w => `<col style="width:${w}%">`).join(''); }
+
+// ── FILTROS por columna ───────────────────────────────────────
+let colFilters = {};   // key de columna -> texto del filtro
+let _filasPorTk = {};  // ticker -> fila (para filtrar sin re-render, conservando el foco)
+// Valor filtrable de una columna: fechas/última-op como texto legible; el resto, el accesor de orden.
+function filtroValor(c, fila){
+  if (c.k === 'venc') return fmtDate(fila.inst.venc);
+  if (c.k === 'ultop') { const u = actUltOp(fila.inst.ticker); if (!u) return ''; const d = new Date(u); if (isNaN(d)) return ''; const a = new Date(d.getTime() - 3*3600000); const p = n => String(n).padStart(2,'0'); return `${p(a.getUTCDate())}/${p(a.getUTCMonth()+1)} ${p(a.getUTCHours())}:${p(a.getUTCMinutes())}:${p(a.getUTCSeconds())}`; }
+  return c.get(fila);
+}
+// Numérico: soporta >, >=, <, <=, rango "a-b"; si no, substring. Texto: substring (insensible).
+function coincideFiltro(val, filtro){
+  filtro = String(filtro).trim(); if (!filtro) return true;
+  if (typeof val === 'number' && isFinite(val)) {
+    let m;
+    if (m = filtro.match(/^(>=|<=|>|<)\s*(-?\d+\.?\d*)$/)) { const x = +m[2]; return m[1]==='>'?val>x:m[1]==='>='?val>=x:m[1]==='<'?val<x:val<=x; }
+    if (m = filtro.match(/^(-?\d+\.?\d*)\s*-\s*(-?\d+\.?\d*)$/)) { return val >= +m[1] && val <= +m[2]; }
+    return String(val).includes(filtro);
+  }
+  if (val == null || val === '') return false;
+  return String(val).toLowerCase().includes(filtro.toLowerCase());
+}
+function pasaFiltro(fila){
+  for (const c of COLS) { const f = colFilters[c.k]; if (f && !coincideFiltro(filtroValor(c, fila), f)) return false; }
+  return true;
+}
+function onFiltro(k, v){ colFilters[k] = v; aplicarFiltros(); }
+function aplicarFiltros(){
+  document.querySelectorAll('table.tabla-grupo tbody tr').forEach(tr => {
+    const fila = _filasPorTk[tr.dataset.tk];
+    tr.style.display = (fila && pasaFiltro(fila)) ? '' : 'none';
+  });
+}
+
+// ── RESIZE de columnas (drag en el borde derecho del header) ──
+function iniciarResize(e, i){
+  e.stopPropagation(); e.preventDefault();
+  const startX = e.clientX;
+  const tabla = e.target.closest('table');
+  const totalW = tabla.offsetWidth || 1;
+  const startW = tabla.querySelectorAll('colgroup col')[i]?.offsetWidth || (colWidths[i]/100*totalW);
+  const mover = (ev) => {
+    const pct = Math.max(2.5, (startW + (ev.clientX - startX)) / totalW * 100);
+    colWidths[i] = pct;
+    document.querySelectorAll('table.tabla-grupo colgroup').forEach(cg => { if (cg.children[i]) cg.children[i].style.width = pct + '%'; });
+  };
+  const soltar = () => { document.removeEventListener('mousemove', mover); document.removeEventListener('mouseup', soltar); try { localStorage.setItem('ons_col_widths', JSON.stringify(colWidths)); } catch {} };
+  document.addEventListener('mousemove', mover); document.addEventListener('mouseup', soltar);
+}
+
 const sortState = {};   // grupo -> { col, dir }   (cada grupo se ordena independiente)
 function cmpVal(a, b, dir) {
   const na = a === null || a === undefined || a === '' || (typeof a === 'number' && isNaN(a));
@@ -1169,6 +1230,7 @@ function renderTabla() {
   }
 
   // 1) Filas visibles con métricas precomputadas (para poder ordenar sin recalcular)
+  _filasPorTk = {};
   const filas = [];
   for (const inst of instrumentos) {
     if (monedaDeGrupo(inst.grupo) !== monedaActiva) continue;       // solo la moneda activa
@@ -1195,22 +1257,25 @@ function renderTabla() {
     const label = GRUPOS.find(x => x.key === g.key)?.label || g.key;
     const st = sortState[g.key];
     if (st) { const col = COLS.find(c => c.k === st.col); if (col) g.filas.sort((a, b) => cmpVal(col.get(a), col.get(b), st.dir)); }
-    const ths = COLS.map(c => {
+    const ths = COLS.map((c, i) => {
       const on = st && st.col === c.k;
       const arrow = on ? (st.dir === 'desc' ? ' ▼' : ' ▲') : '';
-      return `<th class="${c.left ? 'th-left ' : ''}${on ? 'sorted' : ''}" onclick="ordenarGrupo('${g.key}','${c.k}')">${c.label}<span class="sort-arrow">${arrow}</span></th>`;
+      return `<th class="${c.left ? 'th-left ' : ''}${on ? 'sorted' : ''}" onclick="ordenarGrupo('${g.key}','${c.k}')">${c.label}<span class="sort-arrow">${arrow}</span><span class="col-resize" onmousedown="iniciarResize(event,${i})" onclick="event.stopPropagation()"></span></th>`;
     }).join('');
-    const rows = g.filas.map(f => `<tr class="data-row">${COLS.map(c => c.cell(f)).join('')}</tr>`).join('');
-    html += `<table class="tabla-grupo"><colgroup>${COLGROUP}</colgroup>
+    const filtros = COLS.map(c => `<th class="filtro-th"><input class="filtro-input" data-fcol="${c.k}" value="${(colFilters[c.k]||'').replace(/"/g,'&quot;')}" oninput="onFiltro('${c.k}', this.value)" placeholder="⌕"></th>`).join('');
+    const rows = g.filas.map(f => { _filasPorTk[f.inst.ticker] = f; return `<tr class="data-row" data-tk="${f.inst.ticker}">${COLS.map(c => c.cell(f)).join('')}</tr>`; }).join('');
+    html += `<table class="tabla-grupo"><colgroup>${colgroupHTML()}</colgroup>
       <thead>
         <tr><th class="grupo-titulo" colspan="${nCols}">${label}</th></tr>
         <tr class="col-header-row">${ths}</tr>
+        <tr class="filtro-row">${filtros}</tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>`;
   }
 
   cont.innerHTML = html || `<div class="empty-state" style="padding:40px;">No hay ONs de ${monedaActiva === 'local' ? 'ley local' : 'ley extranjera'} con datos</div>`;
+  aplicarFiltros(); // re-aplica los filtros activos tras cada render (p. ej. auto-refresh)
 
   // Guardar datos enriquecidos en localStorage para curvas.html
   try {
@@ -1931,6 +1996,7 @@ const INDUSTRIA = {
   'John Deere':'Maquinaria', 'CNH':'Maquinaria', 'Mirgor':'Electrónica',
   'Loma Negra':'Materiales (cemento)', 'Aluar':'Aluminio', 'Sidersa':'Siderurgia', 'Minera Exar':'Minería',
   'Havanna':'Consumo', 'Farmacity':'Retail', 'Clisa':'Construcción', 'AA 2000':'Infraestructura',
+  'Grupo ST':'Finanzas',
 };
 let _emisorPorTicker = {}; // ticker 1816 (forma O) -> emisor (del universo)
 async function cargarEmisores(){
