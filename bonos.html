@@ -47,7 +47,7 @@
   .det-x:hover { border-color: var(--cyan); color: var(--navy); }
   .det-close { position: absolute; top: 5px; right: 9px; border: none; background: none; font-size: 17px; cursor: pointer; color: var(--text-3); line-height: 1; }
   .det-close:hover { color: var(--navy); }
-  .wrap { max-width: 1400px; margin: 0 auto; padding: 0 24px 24px; }
+  .wrap { max-width: 1850px; margin: 0 auto; padding: 0 24px 24px; }
 
   /* NAVBAR */
   .navbar { background: var(--navy); padding: 0 32px; height: 56px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
@@ -94,7 +94,7 @@
   /* TABLA PRINCIPAL */
   .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: visible; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
   /* Una tabla por tipo de bono; anchos fijos (colgroup) para que queden alineadas */
-  .tabla-grupo { width: 100%; border-collapse: collapse; min-width: 700px; table-layout: fixed; }
+  .tabla-grupo { width: 100%; border-collapse: collapse; min-width: 1150px; table-layout: fixed; }
   .tabla-grupo td { overflow: hidden; text-overflow: ellipsis; }
 
   /* Título del grupo — sticky arriba de su sección */
@@ -760,6 +760,21 @@ function frecuenciaCupon(inst) {
   return Math.max(1, Math.round(365 / mediana));
 }
 
+// Periodicidad de cupón y tipo de amortización — derivadas del cronograma de flujos. Los grupos
+// paramétricos (lecap/cer/tamar/usdlinked/dual) el monitor los modela como cupón cero a
+// vencimiento (capitalizan), así que se muestran "Cupón cero" / "Bullet".
+const PERIODICIDAD_MAP = { 1:'Anual', 2:'Semestral', 3:'Cuatrimestral', 4:'Trimestral', 6:'Bimestral', 12:'Mensual' };
+function periodicidadDe(inst){
+  const fl = inst.flujosAll || inst.flujos;
+  if (fl && fl.some(f => (f.renta||0) > 0)) { const m = frecuenciaCupon(inst); return PERIODICIDAD_MAP[m] || (m + '/año'); }
+  return GRUPOS_PARAMETRICOS.includes(inst.grupo) ? 'Cupón cero' : '—';
+}
+function tipoAmortDe(inst){
+  const fl = inst.flujosAll || inst.flujos;
+  if (fl && fl.length) { const c = fl.filter(f => (f.amort||0) > 0).length; if (c) return c === 1 ? 'Bullet' : `Amortizable (${c})`; }
+  return GRUPOS_PARAMETRICOS.includes(inst.grupo) ? 'Bullet' : '—';
+}
+
 // Valor técnico de un bono de tasa fija a una fecha dada (liquidación):
 // residual vigente + intereses corridos del cupón en curso (proporción del período).
 function valorTecnicoTF(inst, fechaLiq) {
@@ -1233,6 +1248,8 @@ const COLS = [
   { k:'venc',    label:'Vencimiento', w:9.3,  get:f=>f.dias,     cell:f=>`<td>${fmtDate(f.inst.venc)}</td>` },
   { k:'dias',    label:'Días',        w:5.6,  get:f=>f.dias,     cell:f=>`<td>${f.m.dias!==null?`<span class="${f.m.dias<30?'val-red':''}">${f.m.dias}d</span>`:'—'}</td>` },
   { k:'md',      label:'M. Dur.',     w:6.4,  get:f=>f.m.md,      cell:f=>`<td>${dash(f.m.md,1)}</td>` },
+  { k:'period',  label:'Periodicidad', w:9.0, left:true, get:f=>periodicidadDe(f.inst), cell:f=>`<td class="td-nombre">${periodicidadDe(f.inst)}</td>` },
+  { k:'amort',   label:'Amortización', w:10.0, left:true, get:f=>tipoAmortDe(f.inst), cell:f=>`<td class="td-nombre">${tipoAmortDe(f.inst)}</td>` },
   { k:'tna',     label:'TNA %',       w:6.4,  get:f=>f.m.tna,     cell:f=>`<td>${dash(f.m.tna,2,'%','val-blue')}</td>` },
   { k:'tea',     label:'TEA %',       w:6.7,  get:f=>f.m.tea,     cell:f=>`<td>${dash(f.m.tea,2,'%','val-cyan')}</td>` },
   { k:'paridad', label:'Paridad %',   w:8.0,  get:f=>f.m.paridad, cell:f=>`<td>${dash(f.m.paridad,2,'%','val-text3')}</td>` },
