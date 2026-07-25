@@ -2028,9 +2028,17 @@ function periodicidadDe(inst){
 function tipoAmortDe(inst){
   const fl = inst.flujosAll || inst.flujos;
   if (!fl || !fl.length) return '—';
-  const cuotas = fl.filter(f => (f.amort||0) > 0).length;
-  if (!cuotas) return '—';
-  return cuotas === 1 ? 'Bullet' : `Amortizable (${cuotas})`;
+  // Nº de amortizaciones = cuotas con amort>0, o (si no hay amort) caídas del valor residual.
+  const ord = [...fl].sort((a, b) => (a.fecha||'').localeCompare(b.fecha||''));
+  let cuotas = 0, prev = null;
+  for (const f of ord) {
+    const vr = (typeof f.vr === 'number') ? f.vr : null;
+    if ((f.amort||0) > 0) cuotas++;
+    else if (prev != null && vr != null && vr < prev - 0.001) cuotas++;
+    if (vr != null) prev = vr;
+  }
+  if (cuotas) return cuotas === 1 ? 'Bullet' : `Amortizable (${cuotas})`;
+  return ord.some(f => (f.total||0) > 0 || (f.renta||0) > 0) ? 'Bullet' : '—';
 }
 
 // ── AUTO-ADD de ONs líquidas nuevas ───────────────────────────

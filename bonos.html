@@ -771,7 +771,19 @@ function periodicidadDe(inst){
 }
 function tipoAmortDe(inst){
   const fl = inst.flujosAll || inst.flujos;
-  if (fl && fl.length) { const c = fl.filter(f => (f.amort||0) > 0).length; if (c) return c === 1 ? 'Bullet' : `Amortizable (${c})`; }
+  if (fl && fl.length) {
+    // Nº de amortizaciones = cuotas con amort>0, o (si el sheet no trae amort) caídas del valor residual.
+    const ord = [...fl].sort((a, b) => (a.fecha||'').localeCompare(b.fecha||''));
+    let cuotas = 0, prev = null;
+    for (const f of ord) {
+      const vr = (typeof f.vr === 'number') ? f.vr : null;
+      if ((f.amort||0) > 0) cuotas++;
+      else if (prev != null && vr != null && vr < prev - 0.001) cuotas++;
+      if (vr != null) prev = vr;
+    }
+    if (cuotas) return cuotas === 1 ? 'Bullet' : `Amortizable (${cuotas})`;
+    if (ord.some(f => (f.total||0) > 0 || (f.renta||0) > 0)) return 'Bullet';
+  }
   return GRUPOS_PARAMETRICOS.includes(inst.grupo) ? 'Bullet' : '—';
 }
 
