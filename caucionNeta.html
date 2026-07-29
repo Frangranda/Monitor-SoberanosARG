@@ -34,6 +34,11 @@
 
   .intro { font-size: 12px; color: var(--text-3); font-family: var(--mono); margin-bottom: 20px; line-height: 1.6; }
 
+  .modo-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 18px; background: var(--surface); box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+  .modo-btn { font-size: 11px; font-family: var(--mono); font-weight: 600; letter-spacing: .05em; text-transform: uppercase; padding: 9px 24px; cursor: pointer; border: none; background: transparent; color: var(--text-3); transition: all .15s; }
+  .modo-btn:hover { color: var(--navy); background: var(--row-hover); }
+  .modo-btn.active, .modo-btn.active:hover { background: var(--navy); color: #fff; }
+
   .layout { display: grid; grid-template-columns: 340px 1fr; gap: 20px; align-items: start; }
   @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
 
@@ -80,6 +85,7 @@
   .kpi .k-val { font-size: 18px; font-weight: 700; font-family: var(--mono); color: var(--navy); }
   .kpi .k-val.green { color: var(--green); }
   .kpi .k-val.amber { color: var(--amber); }
+  .kpi .k-val.red { color: var(--red); }
 
   .nota { font-size: 10px; color: var(--text-3); font-family: var(--mono); line-height: 1.6; margin-top: 14px; padding: 12px 16px; background: var(--card); border-left: 3px solid var(--cyan); border-radius: 0 6px 6px 0; }
 </style>
@@ -107,14 +113,19 @@
     <a class="nav-tab active" href="caucionNeta.html">Caución Neta</a>
   </div>
 
-  <div class="intro">
+  <div class="modo-toggle">
+    <button class="modo-btn active" id="btn-coloc" type="button" onclick="setModo('coloc')">Colocadora</button>
+    <button class="modo-btn" id="btn-tom" type="button" onclick="setModo('tom')">Tomadora</button>
+  </div>
+
+  <div class="intro" id="intro">
     Caución colocadora — rendimiento neto de costos. Colocás un monto a una tasa por una cantidad de días y cobrás el interés, netos el arancel, derechos de mercado y bolsa (con su IVA). Los gastos se calculan sobre el importe bruto futuro y se prorratean en 90 días.
   </div>
 
   <div class="layout">
     <!-- INPUTS -->
     <div class="card">
-      <div class="card-header"><div class="card-title">Datos de la colocación</div></div>
+      <div class="card-header"><div class="card-title" id="card-header-title">Datos de la colocación</div></div>
       <div class="card-body">
         <div class="field">
           <label>Monto contado ($)</label>
@@ -150,17 +161,18 @@
           <tr><td class="lbl sub">IVA s/ arancel</td><td class="val neg" id="r-ivaAr">—</td></tr>
           <tr><td class="lbl sub">Derechos de mercado y bolsa</td><td class="val neg" id="r-mb">—</td></tr>
           <tr><td class="lbl sub">IVA s/ mercado y bolsa</td><td class="val neg" id="r-ivaMb">—</td></tr>
-          <tr class="total"><td class="lbl">Monto neto</td><td class="val" id="r-neto">—</td></tr>
+          <tr class="total"><td class="lbl" id="lbl-neto">Monto neto</td><td class="val" id="r-neto">—</td></tr>
         </tbody>
       </table>
-      <div class="kpis">
-        <div class="kpi"><div class="k-lbl">Tasa neta (TNA)</div><div class="k-val green" id="r-tasaNeta">—</div></div>
+      <div class="kpis" id="kpis">
+        <div class="kpi"><div class="k-lbl" id="lbl-tasa">Tasa neta (TNA)</div><div class="k-val green" id="r-tasaNeta">—</div></div>
+        <div class="kpi" id="kpi-cft" style="display:none"><div class="k-lbl">CFT</div><div class="k-val amber" id="r-cft">—</div></div>
         <div class="kpi"><div class="k-lbl">Gastos totales</div><div class="k-val amber" id="r-gastos">—</div></div>
       </div>
     </div>
   </div>
 
-  <div class="nota">
+  <div class="nota" id="nota">
     Monto futuro = Contado × (1 + Tasa × Días/365). &nbsp;·&nbsp; Cada costo = Monto futuro × alícuota × Días/Prorrateo, más su IVA. &nbsp;·&nbsp; Tasa neta = ((Neto − Contado)/Contado) / Días × 365.
   </div>
 </div>
@@ -169,6 +181,56 @@
 function n(id) { return parseFloat(document.getElementById(id).value) || 0; }
 function fmtPesos(x) {
   return '$' + x.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Defaults de costos por modo (arancel/mercado/bolsa en %). IVA y prorrateo no cambian.
+const DEFAULTS = {
+  coloc: { arancel: 0.5, mercado: 0.03, bolsa: 0.015 },
+  tom:   { arancel: 1.5, mercado: 0.06, bolsa: 0.03  },
+};
+const TEXTOS = {
+  coloc: {
+    intro: 'Caución colocadora — rendimiento neto de costos. Colocás un monto a una tasa por una cantidad de días y cobrás el interés, netos el arancel, derechos de mercado y bolsa (con su IVA). Los gastos se calculan sobre el importe bruto futuro y se prorratean en 90 días.',
+    header: 'Datos de la colocación',
+    neto: 'Monto neto',
+    tasa: 'Tasa neta (TNA)',
+    nota: 'Monto futuro = Contado × (1 + Tasa × Días/365).  ·  Cada costo = Monto futuro × alícuota × Días/Prorrateo, más su IVA (se restan).  ·  Tasa neta = ((Neto − Contado)/Contado) / Días × 365.',
+  },
+  tom: {
+    intro: 'Caución tomadora — costo neto de fondearte. Tomás un monto a una tasa por una cantidad de días y devolvés el interés más el arancel, derechos de mercado y bolsa (con su IVA). Los gastos se calculan sobre el importe bruto futuro y se prorratean en 90 días.',
+    header: 'Datos de la toma',
+    neto: 'Monto a devolver',
+    tasa: 'Costo neto (TNA)',
+    nota: 'Monto futuro = Contado × (1 + Tasa × Días/365).  ·  Cada costo = Monto futuro × alícuota × Días/Prorrateo, más su IVA (se suman).  ·  Costo neto = ((Devolvés − Contado)/Contado) / Días × 365.  ·  CFT = (Devolvés/Contado)^(365/Días) − 1.',
+  },
+};
+
+let MODO = 'coloc';
+
+function setModo(m) {
+  MODO = m;
+  document.getElementById('btn-coloc').classList.toggle('active', m === 'coloc');
+  document.getElementById('btn-tom').classList.toggle('active', m === 'tom');
+  // Reset de los costos editables a los defaults del modo (IVA/prorrateo no se tocan).
+  const d = DEFAULTS[m];
+  document.getElementById('arancel').value = d.arancel;
+  document.getElementById('mercado').value = d.mercado;
+  document.getElementById('bolsa').value   = d.bolsa;
+  // Textos y labels dinámicos
+  const t = TEXTOS[m];
+  document.getElementById('intro').textContent            = t.intro;
+  document.getElementById('card-header-title').textContent = t.header;
+  document.getElementById('lbl-neto').textContent          = t.neto;
+  document.getElementById('lbl-tasa').textContent          = t.tasa;
+  document.getElementById('nota').textContent              = t.nota;
+  // CFT solo en tomadora; ajustar columnas del bloque de KPIs
+  document.getElementById('kpi-cft').style.display   = m === 'tom' ? 'flex' : 'none';
+  document.getElementById('kpis').style.gridTemplateColumns = m === 'tom' ? '1fr 1fr 1fr' : '1fr 1fr';
+  // KPI de tasa: verde si es rendimiento (coloc), rojo si es costo (tom)
+  const kv = document.getElementById('r-tasaNeta');
+  kv.classList.toggle('green', m === 'coloc');
+  kv.classList.toggle('red',   m === 'tom');
+  calc();
 }
 
 function calc() {
@@ -184,30 +246,38 @@ function calc() {
   // Monto futuro (bruto)
   const futuro = monto * (1 + tasa * dias / 365);
 
-  // Costos (sobre el bruto futuro, prorrateados). Se guardan como negativos.
-  const cArancel = -(futuro * arancel * dias / prorr);
+  // Costos sobre el bruto futuro, prorrateados. Colocadora los resta; tomadora los suma.
+  const signo = MODO === 'tom' ? 1 : -1;
+  const cArancel = signo * (futuro * arancel * dias / prorr);
   const cIvaAr   = cArancel * iva;
-  const cMb      = -(futuro * (mercado + bolsa) * dias / prorr);
+  const cMb      = signo * (futuro * (mercado + bolsa) * dias / prorr);
   const cIvaMb   = cMb * iva;
 
-  // Monto neto
+  // Monto neto: coloc = futuro − costos (a cobrar); tom = futuro + costos (a devolver)
   const neto = futuro + cArancel + cIvaAr + cMb + cIvaMb;
 
-  // Tasa neta (TNA) y gastos totales
   const tasaNeta = dias > 0 && monto > 0 ? ((neto - monto) / monto) / dias * 365 : null;
-  const gastos = futuro - neto;
+  const gastos   = Math.abs(futuro - neto);
+  // CFT (Costo Financiero Total, efectivo anual). Solo se muestra en tomadora.
+  const cft = (dias > 0 && monto > 0 && neto > 0) ? Math.pow(neto / monto, 365 / dias) - 1 : null;
 
-  document.getElementById('r-futuro').textContent  = fmtPesos(futuro);
-  document.getElementById('r-arancel').textContent = fmtPesos(cArancel);
-  document.getElementById('r-ivaAr').textContent   = fmtPesos(cIvaAr);
-  document.getElementById('r-mb').textContent      = fmtPesos(cMb);
-  document.getElementById('r-ivaMb').textContent   = fmtPesos(cIvaMb);
-  document.getElementById('r-neto').textContent    = fmtPesos(neto);
+  document.getElementById('r-futuro').textContent   = fmtPesos(futuro);
+  document.getElementById('r-arancel').textContent  = fmtPesos(cArancel);
+  document.getElementById('r-ivaAr').textContent    = fmtPesos(cIvaAr);
+  document.getElementById('r-mb').textContent       = fmtPesos(cMb);
+  document.getElementById('r-ivaMb').textContent    = fmtPesos(cIvaMb);
+  document.getElementById('r-neto').textContent     = fmtPesos(neto);
   document.getElementById('r-tasaNeta').textContent = tasaNeta !== null ? (tasaNeta * 100).toFixed(2) + '%' : '—';
   document.getElementById('r-gastos').textContent   = fmtPesos(gastos);
+  document.getElementById('r-cft').textContent      = cft !== null ? (cft * 100).toFixed(2) + '%' : '—';
+
+  // En colocadora los costos son restas (rojo); en tomadora, sumas (sin rojo).
+  const esNeg = MODO !== 'tom';
+  ['r-arancel', 'r-ivaAr', 'r-mb', 'r-ivaMb'].forEach(id =>
+    document.getElementById(id).classList.toggle('neg', esNeg));
 }
 
-calc();
+setModo('coloc');
 </script>
 </body>
 </html>
