@@ -2024,87 +2024,79 @@ function industriaDe(inst){ const e = emisorDe(inst); return e ? (INDUSTRIA[e] |
 
 // ── RATING crediticio por emisor (columna Rating) ─────────────
 // 1816 no expone la calificación: se carga a mano por emisor, igual que INDUSTRIA.
-// Fuentes: FIX SCR (Fitch Argentina, sufijo "(arg)") y Moody's Local Argentina (sufijo ".ar").
-// e:'nac' = escala nacional argentina (compara riesgo RELATIVO dentro del país).
-// e:'glob' = escala global (para emisores sin nota nacional). Las dos escalas NO son comparables.
-// Al sumar un emisor nuevo hay que agregarlo acá; si no, la columna muestra "—".
+// CADA EMISOR TIENE DOS NOTAS y la que se muestra la define el INSTRUMENTO, no la
+// disponibilidad del dato (mezclarlas no tiene sentido: miden cosas distintas):
+//   · nac  = escala nacional argentina — FIX SCR "(arg)" / Moody's Local ".ar".
+//            Mide riesgo RELATIVO dentro de Argentina.
+//   · glob = escala internacional (S&P/Moody's/Fitch). Comparable con el resto del mundo.
+// En ONs: ley NY -> internacional; ley local -> nacional.
+// Si falta la nota de la escala que corresponde, la celda muestra "—" (no se sustituye por la otra).
 const RATINGS = {
-  "Arcor": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-15", e:'nac'},
-  "B. Galicia": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-02", e:'nac'},
-  "B. Macro": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-28", e:'nac'},
-  "B. Mariva": {r:"A.ar", a:"Moody's Local AR", p:"Estable", f:"2026-06-23", e:'nac'},
-  "BBVA Argentina": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-04", e:'nac'},
-  "BCRA": {r:null, e:'nr'},
-  "CABA": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-04-30", e:'nac'},
-  "CGC": {r:"AA-(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-29", e:'nac'},
-  "CNH": {r:"AA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-06", e:'nac'},
-  "Capex": {r:"AA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-22", e:'nac'},
-  "Central Puerto": {r:"AA+(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-08", e:'nac'},
-  "Cordoba": {r:"AA(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-01", e:'nac'},
-  "Cresud": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-04-24", e:'nac'},
-  "Edemsa": {r:"A+(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-24", e:'nac'},
-  "Edenor": {r:"A+(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-29", e:'nac'},
-  "Entre Rios": {r:"BBB-(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-07", e:'nac'},
-  "GEMSA-CTR": {r:"D(arg)", a:"FIX SCR", p:"—", f:"2026-04-14", e:'nac'},
-  "Genneia": {r:"AA+.ar", a:"Moody's Local AR", p:"Estable", f:"2026-04-21", e:'nac'},
-  "Grupo ST": {r:"A+(arg)", a:"FIX SCR", p:"Estable", f:"2026-04-13", e:'nac'},
-  "IRSA": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-01", e:'nac'},
-  "Irsa Prop": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-01", e:'nac'},
-  "John Deere": {r:"AA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-28", e:'nac'},
-  "Loma Negra": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-04", e:'nac'},
-  "Luz de Tres Picos": {r:"AA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-08", e:'nac'},
-  "MSU Energy": {r:"AA-(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-08", e:'nac'},
-  "MSU Green Energy": {r:"AA-(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-07", e:'nac'},
-  "Mendoza": {r:"A-.ar", a:"Moody's Local AR", p:"Estable", f:"2026-06-02", e:'nac'},
-  "Mirgor": {r:"A+.ar", a:"Moody's Local AR", p:"Estable", f:"2026-04-17", e:'nac'},
-  "Neuquen": {r:"A-(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-01", e:'nac'},
-  "Oleoductos del Valle": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-07", e:'nac'},
-  "PBA": {r:"BB.ar", a:"Moody's Local AR", p:"Estable", f:"2026-05-08", e:'nac'},
-  "PCR": {r:"AA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-08", e:'nac'},
-  "Pampa Energia": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-27", e:'nac'},
-  "Pan American Energy": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-23", e:'nac'},
-  "Pecom Servicios Energia": {r:"AA(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-29", e:'nac'},
-  "Pluspetrol": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-24", e:'nac'},
-  "Profertil": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-04-29", e:'nac'},
-  "República Argentina": {r:"B-", a:"S&P / Fitch", p:"Estable", f:"2026-06-10", e:'glob'},
-  "Santa Fe": {r:"AA+(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-01", e:'nac'},
-  "Tarjeta Naranja": {r:"AA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-19", e:'nac'},
-  "Tecpetrol": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-15", e:'nac'},
-  "Telecom Argentina": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-28", e:'nac'},
-  "Transportadora de Gas del Sur": {r:"B", a:"S&P / Fitch", p:"Estable", f:"2026-06-10", e:'glob'},
-  "Vista Energy Argentina": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-08", e:'nac'},
-  "YPF": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-07", e:'nac'},
-  "YPF Luz": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-06", e:'nac'},
+  "Arcor": { nac: {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-15"}, glob: null },
+  "B. Galicia": { nac: {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-02"}, glob: null },
+  "B. Macro": { nac: {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-28"}, glob: null },
+  "B. Mariva": { nac: {r:"A.ar", a:"Moody's Local AR", p:"Estable", f:"2026-06-23"}, glob: null },
+  "BBVA Argentina": { nac: {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-04"}, glob: null },
+  "CGC": { nac: {r:"AA-(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-29"}, glob: null },
+  "CNH": { nac: {r:"AA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-06"}, glob: null },
+  "Capex": { nac: {r:"AA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-22"}, glob: null },
+  "Central Puerto": { nac: {r:"AA+(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-08"}, glob: null },
+  "Cresud": { nac: {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-04-24"}, glob: null },
+  "Edemsa": { nac: {r:"A+(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-24"}, glob: {r:"B", a:"S&P", p:"Estable", f:"2026-06-11"} },
+  "Edenor": { nac: {r:"A+(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-29"}, glob: null },
+  "GEMSA-CTR": { nac: {r:"D(arg)", a:"FIX SCR", p:"—", f:"2026-04-14"}, glob: null },
+  "Genneia": { nac: {r:"AA+.ar", a:"Moody's Local AR", p:"Estable", f:"2026-04-21"}, glob: {r:"B", a:"S&P", p:"Estable", f:"2026-06-11"} },
+  "Grupo ST": { nac: {r:"A+(arg)", a:"FIX SCR", p:"Estable", f:"2026-04-13"}, glob: null },
+  "IRSA": { nac: {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-01"}, glob: null },
+  "Irsa Prop": { nac: {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-01"}, glob: null },
+  "John Deere": { nac: {r:"AA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-28"}, glob: null },
+  "Loma Negra": { nac: {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-04"}, glob: null },
+  "Luz de Tres Picos": { nac: {r:"AA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-08"}, glob: null },
+  "MSU Energy": { nac: {r:"AA-(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-08"}, glob: null },
+  "MSU Green Energy": { nac: {r:"AA-(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-07"}, glob: null },
+  "Mirgor": { nac: {r:"A+.ar", a:"Moody's Local AR", p:"Estable", f:"2026-04-17"}, glob: null },
+  "Oleoductos del Valle": { nac: {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-07"}, glob: null },
+  "PCR": { nac: {r:"AA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-08"}, glob: null },
+  "Pampa Energia": { nac: {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-27"}, glob: {r:"B", a:"S&P", p:"Estable", f:"2026-06-11"} },
+  "Pan American Energy": { nac: {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-23"}, glob: null },
+  "Pecom Servicios Energia": { nac: {r:"AA(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-29"}, glob: null },
+  "Pluspetrol": { nac: {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-24"}, glob: null },
+  "Profertil": { nac: {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-04-29"}, glob: null },
+  "Tarjeta Naranja": { nac: {r:"AA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-19"}, glob: null },
+  "Tecpetrol": { nac: {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-15"}, glob: null },
+  "Telecom Argentina": { nac: {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-28"}, glob: {r:"B", a:"S&P", p:"Estable", f:"2026-06-11"} },
+  "Transportadora de Gas del Sur": { nac: null, glob: {r:"B", a:"S&P", p:"Estable", f:"2026-06-11"} },
+  "Vista Energy Argentina": { nac: {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-08"}, glob: null },
+  "YPF": { nac: {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-07"}, glob: {r:"B", a:"S&P", p:"Estable", f:"2026-06-11"} },
+  "YPF Luz": { nac: {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-06"}, glob: {r:"B", a:"S&P", p:"Estable", f:"2026-06-11"} },
 };
 // Override por ticker: RUCED lo emite MSU S.A., no MSU Energy S.A. (notas distintas).
 const RATING_TICKER = {
-  "RUCED": {r:"A+(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-05", e:'nac'},
+  "RUCED": { nac: {r:"A+(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-05"}, glob: null },
 };
-const RATING_ESCALA = ['AAA','AA+','AA','AA-','A+','A','A-','BBB+','BBB','BBB-','BB+','BB','BB-','B+','B','B-','CCC+','CCC','CCC-','CC','C','D'];
+function escalaDe(inst){ return inst.grupo === 'onny' ? 'glob' : 'nac'; }
 function ratingDe(inst){
   const t = String(inst.ticker || '').toUpperCase();
-  if (RATING_TICKER[t]) return RATING_TICKER[t];
   const e = emisorDe(inst);
-  return e ? (RATINGS[e] || null) : null;
+  const reg = RATING_TICKER[t] || (e ? RATINGS[e] : null);
+  return reg ? (reg[escalaDe(inst)] || null) : null;
 }
+const RATING_ESCALA = ['AAA','AA+','AA','AA-','A+','A','A-','BBB+','BBB','BBB-','BB+','BB','BB-','B+','B','B-','CCC+','CCC','CCC-','CC','C','D','SD'];
 // Puntaje para ordenar: más alto = mejor nota (el primer click ordena de mejor a peor).
-// Las escalas se ordenan en bloques separados: primero las nacionales, después las globales
-// (no son comparables entre sí), y al final los que no tienen nota.
 function ratingRank(inst){
   const r = ratingDe(inst);
   if (!r || !r.r) return -1;
   const i = RATING_ESCALA.indexOf(r.r.replace(/\(arg\)|\.ar/i, '').trim());
-  const q = i < 0 ? 0 : (RATING_ESCALA.length - i);
-  return r.e === 'glob' ? q : 1000 + q;
+  return i < 0 ? 0 : (RATING_ESCALA.length - i);
 }
 function ratingCell(inst){
   const r = ratingDe(inst);
   if (!r || !r.r) return '<td><span class="no-p">—</span></td>';
-  const esc = r.e === 'glob' ? 'escala global' : 'escala nacional argentina';
+  const esc = escalaDe(inst) === 'glob' ? 'escala internacional' : 'escala nacional argentina';
   const tip = `${r.a} · ${esc} · perspectiva ${r.p || '—'} · ${r.f || ''}`;
   // El sufijo de escala ((arg)/.ar) se muestra chico para que la nota entre en la celda.
   const txt = r.r.replace(/(\(arg\)|\.ar)$/i, m => `<span class="rt-sfx">${m}</span>`);
-  return `<td><span class="rt${r.e === 'glob' ? ' rt-glob' : ''}" title="${tip}">${txt}</span></td>`;
+  return `<td><span class="rt" title="${tip}">${txt}</span></td>`;
 }
 
 // Periodicidad de cupón y tipo de amortización — derivadas del cronograma de flujos (sin scrapear).

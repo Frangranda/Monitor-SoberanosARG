@@ -1259,22 +1259,26 @@ function setMoneda(m) {
 // ── ORDENAMIENTO DE COLUMNAS (dentro de cada grupo de bonos) ──
 // Columnas: label + ancho % (para colgroup) + accessor de orden + cómo se dibuja la celda.
 // ── RATING crediticio por emisor (columna Rating) ─────────────
-// 1816 no expone la calificación: se carga a mano. Fuentes: FIX SCR (Fitch Argentina, sufijo
-// "(arg)") y Moody's Local Argentina (sufijo ".ar"), ambas ESCALA NACIONAL (miden riesgo
-// RELATIVO dentro de Argentina). Cuando el emisor no tiene nota nacional se muestra la global
-// (e:'glob', atenuada): las dos escalas NO son comparables entre sí.
-// El soberano no lleva nota nacional (es el ancla de esa escala) y el BCRA no tiene calificación
-// pública, así que los BOPREAL quedan en "—" en vez de heredar la nota soberana.
+// 1816 no expone la calificación: se carga a mano por emisor, igual que INDUSTRIA.
+// CADA EMISOR TIENE DOS NOTAS y la que se muestra la define el INSTRUMENTO, no la
+// disponibilidad del dato (mezclarlas no tiene sentido: miden cosas distintas):
+//   · nac  = escala nacional argentina — FIX SCR "(arg)" / Moody's Local ".ar".
+//            Mide riesgo RELATIVO dentro de Argentina.
+//   · glob = escala internacional (S&P/Moody's/Fitch). Comparable con el resto del mundo.
+// En el Monitor: hard dollar (Bonares, Globales, BOPREAL, subsoberanos) -> internacional;
+// pesos y dólar-linked (pagan en $) -> nacional.
+// El soberano NO tiene nota en escala nacional (es el ancla de esa escala) y el BCRA no tiene
+// calificación pública: esos casos quedan en "—" en vez de imputarles una nota que no existe.
 const RATINGS = {
-  "República Argentina": {r:"B-", a:"S&P / Fitch", p:"Estable", f:"2026-06-10", e:'glob'},
-  "BCRA": {r:null, e:'nr'},
-  "CABA":       {r:"AAA(arg)",  a:"FIX SCR", p:"Estable", f:"2026-04-30", e:'nac'},
-  "Santa Fe":   {r:"AA+(arg)",  a:"FIX SCR", p:"Estable", f:"2026-06-01", e:'nac'},
-  "Cordoba":    {r:"AA(arg)",   a:"FIX SCR", p:"Estable", f:"2026-06-01", e:'nac'},
-  "Neuquen":    {r:"A-(arg)",   a:"FIX SCR", p:"Estable", f:"2026-06-01", e:'nac'},
-  "Entre Rios": {r:"BBB-(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-07", e:'nac'},
-  "Mendoza":    {r:"A-.ar",     a:"Moody's Local AR", p:"Estable", f:"2026-06-02", e:'nac'},
-  "PBA":        {r:"BB.ar",     a:"Moody's Local AR", p:"Estable", f:"2026-05-08", e:'nac'},
+  "BCRA": { nac: null, glob: null },
+  "CABA": { nac: {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-04-30"}, glob: {r:"B-", a:"S&P", p:"Estable", f:"2026-06-18"} },
+  "Cordoba": { nac: {r:"AA(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-01"}, glob: null },
+  "Entre Rios": { nac: {r:"BBB-(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-07"}, glob: {r:"B-", a:"S&P", p:"Estable", f:"2026-06-18"} },
+  "Mendoza": { nac: {r:"A-.ar", a:"Moody's Local AR", p:"Estable", f:"2026-06-02"}, glob: {r:"B-", a:"S&P", p:"Estable", f:"2026-06-18"} },
+  "Neuquen": { nac: {r:"A-(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-01"}, glob: {r:"B-", a:"S&P", p:"Estable", f:"2026-06-18"} },
+  "PBA": { nac: {r:"BB.ar", a:"Moody's Local AR", p:"Estable", f:"2026-05-08"}, glob: {r:"CCC+", a:"S&P", p:"Estable", f:"2026-06-18"} },
+  "República Argentina": { nac: null, glob: {r:"B-", a:"S&P", p:"Estable", f:"2026-06-10"} },
+  "Santa Fe": { nac: {r:"AA+(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-01"}, glob: null },
 };
 // Todos los grupos soberanos comparten el emisor Nación; los BOPREAL los emite el BCRA.
 const RATING_GRUPO = {
@@ -1287,30 +1291,31 @@ const RATING_SUBSOB = {
   PMM29:'Mendoza', NDT25:'Neuquen', CO32:'Cordoba', CO35:'Cordoba', ERM33:'Entre Rios',
   SFD34:'Santa Fe', BDC36:'CABA', BA37D:'PBA', BB37D:'PBA',
 };
-const RATING_ESCALA = ['AAA','AA+','AA','AA-','A+','A','A-','BBB+','BBB','BBB-','BB+','BB','BB-','B+','B','B-','CCC+','CCC','CCC-','CC','C','D'];
+const GRUPOS_HARD_USD = ['usdbonares','usdglobales','usdbopreal','subsoberano'];
+function escalaDe(inst){ return GRUPOS_HARD_USD.includes(inst.grupo) ? 'glob' : 'nac'; }
 function ratingDe(inst){
   const e = inst.grupo === 'subsoberano'
     ? RATING_SUBSOB[String(inst.ticker || '').toUpperCase()]
     : RATING_GRUPO[inst.grupo];
-  return e ? (RATINGS[e] || null) : null;
+  const reg = e ? RATINGS[e] : null;
+  return reg ? (reg[escalaDe(inst)] || null) : null;
 }
+const RATING_ESCALA = ['AAA','AA+','AA','AA-','A+','A','A-','BBB+','BBB','BBB-','BB+','BB','BB-','B+','B','B-','CCC+','CCC','CCC-','CC','C','D','SD'];
 // Puntaje para ordenar: más alto = mejor nota (el primer click ordena de mejor a peor).
-// Nacionales y globales se ordenan en bloques separados: no son comparables entre sí.
 function ratingRank(inst){
   const r = ratingDe(inst);
   if (!r || !r.r) return -1;
   const i = RATING_ESCALA.indexOf(r.r.replace(/\(arg\)|\.ar/i, '').trim());
-  const q = i < 0 ? 0 : (RATING_ESCALA.length - i);
-  return r.e === 'glob' ? q : 1000 + q;
+  return i < 0 ? 0 : (RATING_ESCALA.length - i);
 }
 function ratingCell(inst){
   const r = ratingDe(inst);
   if (!r || !r.r) return '<td><span class="no-p">—</span></td>';
-  const esc = r.e === 'glob' ? 'escala global' : 'escala nacional argentina';
+  const esc = escalaDe(inst) === 'glob' ? 'escala internacional' : 'escala nacional argentina';
   const tip = `${r.a} · ${esc} · perspectiva ${r.p || '—'} · ${r.f || ''}`;
   // El sufijo de escala ((arg)/.ar) se muestra chico para que la nota entre en la celda.
   const txt = r.r.replace(/(\(arg\)|\.ar)$/i, m => `<span class="rt-sfx">${m}</span>`);
-  return `<td><span class="rt${r.e === 'glob' ? ' rt-glob' : ''}" title="${tip}">${txt}</span></td>`;
+  return `<td><span class="rt" title="${tip}">${txt}</span></td>`;
 }
 
 const COLS = [
