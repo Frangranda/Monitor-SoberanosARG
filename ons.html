@@ -138,6 +138,7 @@
   .rt { font-weight: 700; font-size: 11px; cursor: help; white-space: nowrap; }
   .rt-glob { font-weight: 600; font-style: italic; color: var(--text-3); }
   .rt-sfx { font-size: 8.5px; font-weight: 600; opacity: .55; }  /* (arg) / .ar — marca la escala */
+  .rt-ag { font-size: 8.5px; font-weight: 600; opacity: .55; margin-left: 3px; }  /* agencia calificadora */
   .val-green { color: var(--green); font-weight: 500; }
   .val-cyan  { color: #17336f;  font-weight: 700; }
   .val-blue  { color: var(--blue);  font-weight: 500; }
@@ -1140,7 +1141,7 @@ const COLS = [
   { k:'ticker',  label:'Ticker',      w:7.0,  left:true, get:f=>f.inst.ticker,     cell:f=>`<td class="td-ticker">${f.inst.ticker}</td>` },
   { k:'nombre',  label:'Nombre',      w:11.0, left:true, get:f=>f.inst.nombre||'', cell:f=>`<td class="td-nombre">${f.inst.nombre||''}</td>` },
   { k:'industria', label:'Industria', w:10.5, left:true, get:f=>industriaDe(f.inst), cell:f=>`<td class="td-nombre">${industriaDe(f.inst)}</td>` },
-  { k:'rating',  label:'Rating',      w:11.0, get:f=>ratingRank(f.inst), cell:f=>ratingCell(f.inst) },
+  { k:'rating',  label:'Rating',      w:16.0, get:f=>ratingRank(f.inst), cell:f=>ratingCell(f.inst) },
   { k:'divisa',  label:'Divisa de pago', w:8.0, left:true, get:f=>f.inst.divisa||'', cell:f=>`<td>${f.inst.divisa||'—'}</td>` },
   { k:'precio',  label:'Precio',      w:9.2,  get:f=>f.m.precio, cell:f=>`<td><input class="precio-cell-input${f.m.precio?' has-value':''}" id="inp-${f.inst.ticker}" type="number" step="0.01" placeholder="—" value="${f.m.precio?f.m.precio.toFixed(2):''}" oninput="onPrecioChange('${f.inst.ticker}', this.value)"></td>` },
   { k:'ultop',   label:'Últ. op.',    w:9.0,  get:f=>actUltOpMs(f.inst.ticker), cell:f=>`<td style="font-size:11px">${fmtUltOp(actUltOp(f.inst.ticker))}</td>` },
@@ -2083,6 +2084,9 @@ function ratingDe(inst){
 }
 // Equivalencia de la notación de Moody's a la de S&P/Fitch (sólo para ORDENAR: algunas notas
 // vienen de Moody's, ej. Santa Fe B2, y otras de Fitch/S&P, ej. Córdoba B-).
+// Nombre corto de la agencia para mostrar en la celda (el tooltip lleva el nombre completo).
+// A Moody's Local le alcanza con "Moody's": el sufijo .ar de la nota ya indica que es escala local.
+const RATING_AG_CORTA = { 'FIX SCR':'FIX', "Moody's Local AR":"Moody's", "Moody's":"Moody's", 'S&P':'S&P', 'Fitch':'Fitch' };
 const RATING_MOODYS = {Aaa:'AAA',Aa1:'AA+',Aa2:'AA',Aa3:'AA-',A1:'A+',A2:'A',A3:'A-',
   Baa1:'BBB+',Baa2:'BBB',Baa3:'BBB-',Ba1:'BB+',Ba2:'BB',Ba3:'BB-',B1:'B+',B2:'B',B3:'B-',
   Caa1:'CCC+',Caa2:'CCC',Caa3:'CCC-',Ca:'CC'};
@@ -2101,9 +2105,10 @@ function ratingCell(inst){
   if (!r || !r.r) return '<td><span class="no-p">—</span></td>';
   const esc = escalaDe(inst) === 'glob' ? 'escala internacional' : 'escala nacional argentina';
   const tip = `${r.a} · ${esc} · perspectiva ${r.p || '—'} · ${r.f || ''}`;
-  // El sufijo de escala ((arg)/.ar) se muestra chico para que la nota entre en la celda.
-  const txt = r.r.replace(/(\(arg\)|\.ar)$/i, m => `<span class="rt-sfx">${m}</span>`);
-  return `<td><span class="rt" title="${tip}">${txt}</span></td>`;
+  // El sufijo de escala ((arg)/.ar) y la agencia van en chico para que entre todo en la celda.
+  const nota = r.r.replace(/(\(arg\)|\.ar)$/i, m => `<span class="rt-sfx">${m}</span>`);
+  const ag = RATING_AG_CORTA[r.a] || r.a || '';
+  return `<td><span class="rt" title="${tip}">${nota}<span class="rt-ag">(${ag})</span></span></td>`;
 }
 
 // Periodicidad de cupón y tipo de amortización — derivadas del cronograma de flujos (sin scrapear).
