@@ -204,6 +204,14 @@
           </div>
         </div>
       </div>
+      <div class="caucion-row" style="margin-top:16px; padding-top:14px; border-top:1px solid var(--border); align-items:flex-end; gap:16px;">
+        <div style="font-size:10px;color:var(--red);font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase;align-self:center;">Costos de tomar caución</div>
+        <div class="caucion-input-wrap"><div class="caucion-lbl">Arancel (%)</div><input class="caucion-input" id="cau-arancel" type="number" step="0.01" value="1.5" oninput="renderTabla()" style="color:var(--text-2); width:90px;"></div>
+        <div class="caucion-input-wrap"><div class="caucion-lbl">Mercado (%)</div><input class="caucion-input" id="cau-mercado" type="number" step="0.001" value="0.06" oninput="renderTabla()" style="color:var(--text-2); width:90px;"></div>
+        <div class="caucion-input-wrap"><div class="caucion-lbl">Bolsa (%)</div><input class="caucion-input" id="cau-bolsa" type="number" step="0.001" value="0.03" oninput="renderTabla()" style="color:var(--text-2); width:90px;"></div>
+        <div class="caucion-input-wrap"><div class="caucion-lbl">IVA (%)</div><input class="caucion-input" id="cau-iva" type="number" step="1" value="21" oninput="renderTabla()" style="color:var(--text-2); width:75px;"></div>
+        <div class="caucion-input-wrap"><div class="caucion-lbl">Prorrateo (días)</div><input class="caucion-input" id="cau-prorr" type="number" step="1" value="90" oninput="renderTabla()" style="color:var(--text-2); width:90px;"></div>
+      </div>
     </div>
   </div>
 
@@ -241,8 +249,10 @@
         <div class="glosario-item"><div class="glosario-col">Valor Final</div><div class="glosario-desc"><span class="glosario-formula">100 × (1 + TEM)^(días_360 / 30)</span></div></div>
         <div class="glosario-item"><div class="glosario-col">Rend. Directo %</div><div class="glosario-desc"><span class="glosario-formula">(Valor Final − Precio Neto) / Precio Neto</span></div></div>
         <div class="glosario-item"><div class="glosario-col">Rend. Directo Anualizado %</div><div class="glosario-desc"><span class="glosario-formula">Rend. Directo × (365 / días)</span></div></div>
-        <div class="glosario-item"><div class="glosario-col">Ganancia vs Caución</div><div class="glosario-desc"><span class="glosario-formula">Valor Final − Precio Neto × (1 + TNA_cau/365)^(días−2)</span></div></div>
-        <div class="glosario-item"><div class="glosario-col">TNA BE</div><div class="glosario-desc"><span class="glosario-formula">((Valor Final / Precio Neto)^(1/(días−2)) − 1) × 365</span></div></div>
+        <div class="glosario-item"><div class="glosario-col">Días de fondeo</div><div class="glosario-desc"><span class="glosario-formula">días corridos desde la liquidación T+1 hábil hasta el vencimiento</span></div></div>
+        <div class="glosario-item"><div class="glosario-col">Comisiones caución</div><div class="glosario-desc"><span class="glosario-formula">Futuro × (arancel + mercado + bolsa) × días_fondeo/prorrateo × (1 + IVA)</span></div></div>
+        <div class="glosario-item"><div class="glosario-col">Ganancia vs Caución</div><div class="glosario-desc"><span class="glosario-formula">Valor Final − [ Precio Neto × (1 + TNA_cau/365)^días_fondeo + comisiones caución ]</span></div></div>
+        <div class="glosario-item"><div class="glosario-col">TNA BE</div><div class="glosario-desc"><span class="glosario-formula">((Valor Final / (Precio Neto × (1 + k)))^(1/días_fondeo) − 1) × 365,&nbsp; con k = (arancel+mercado+bolsa) × días_fondeo/prorrateo × (1+IVA)</span></div></div>
       </div>
     </div>
   </div>
@@ -272,6 +282,7 @@
 <script>
 const EXCEL_URL = 'Instrumentos.xlsx';
 const BCRA_URL  = 'https://indicadoresbcra.granda-fra.workers.dev';
+const FERIADOS_WORKER = 'https://feriados-proxy.granda-fra.workers.dev';
 let lecaps = [];
 let precios = {};
 let caucionTna = 20;
@@ -297,6 +308,45 @@ function excelSerialToDate(v) {
   return s;
 }
 
+// ── DÍAS HÁBILES / FERIADOS (portado de bonos.html) ──────────
+let feriados = new Set();
+function esHabil(d) {
+  const dow = d.getDay();
+  if (dow === 0 || dow === 6) return false;
+  return !feriados.has(dateToStr(d));
+}
+// Sumar N días hábiles (saltea sábados, domingos y feriados). Usado para el settlement T+1.
+function sumarDiasHabiles(fecha, n) {
+  const d = (fecha instanceof Date) ? new Date(fecha) : (parseLocalDate(fecha) || new Date());
+  let restantes = n;
+  while (restantes > 0) {
+    d.setDate(d.getDate() + 1);
+    if (esHabil(d)) restantes--;
+  }
+  return d;
+}
+async function cargarFeriados() {
+  const anioActual = new Date().getFullYear();
+  const anios = [];
+  for (let y = 2020; y <= anioActual; y++) anios.push(y);
+  const set = new Set();
+  try {
+    const resultados = await Promise.all(anios.map(y =>
+      fetch(`${FERIADOS_WORKER}/?anio=${y}`).then(r => r.ok ? r.json() : []).catch(() => [])
+    ));
+    resultados.flat().forEach(f => { if (f && f.fecha) set.add(String(f.fecha).slice(0, 10)); });
+    if (set.size) {
+      feriados = set;
+      try { localStorage.setItem('bonos_feriados', JSON.stringify([...set])); } catch(e) {}
+    } else { throw new Error('respuesta vacía'); }
+  } catch(e) {
+    try {
+      const backup = JSON.parse(localStorage.getItem('bonos_feriados') || '[]');
+      if (backup.length) feriados = new Set(backup);
+    } catch(_) {}
+  }
+}
+
 // ── DIAS360 / VPV ────────────────────────────────────────────
 function dias360(emision, venc) {
   const e = parseLocalDate(emision); const v = parseLocalDate(venc);
@@ -314,14 +364,43 @@ function calcularVPV(emision, venc, tem) {
 // ── HELPERS CÁLCULO ──────────────────────────────────────────
 function rendimientoDirecto(vpv, precio) { if (!vpv || !precio || precio <= 0) return null; return (vpv - precio) / precio * 100; }
 function rendimientoDirectoAnualizado(rend, dias) { if (rend === null || !dias || dias <= 0) return null; return (365 / dias) * rend; }
-function gananciaCaucion(vpv, precio, caucionTna, dias) {
-  if (!vpv || !precio || !caucionTna || dias === null || dias <= 0) return null;
-  const factorCaucion = Math.pow(1 + caucionTna / 100 / 365, dias - 2);
-  return vpv - precio * factorCaucion;
+// Costos de TOMAR caución (editables). Alícuota total, IVA y prorrateo en fracción.
+function getCostosCaucion() {
+  const arancel = parseFloat(document.getElementById('cau-arancel')?.value) || 0;
+  const mercado = parseFloat(document.getElementById('cau-mercado')?.value) || 0;
+  const bolsa   = parseFloat(document.getElementById('cau-bolsa')?.value)   || 0;
+  const iva     = parseFloat(document.getElementById('cau-iva')?.value)     || 0;
+  const prorr   = parseFloat(document.getElementById('cau-prorr')?.value)   || 90;
+  return { alic: (arancel + mercado + bolsa) / 100, iva: iva / 100, prorr };
 }
-function calcTnaBE(precio, vpv, dias) {
-  if (!vpv || !precio || precio <= 0 || dias === null || dias <= 2) return null;
-  return (Math.pow(vpv / precio, 1 / (dias - 2)) - 1) * 365 * 100;
+// Días de fondeo: desde la liquidación T+1 hábil hasta el vencimiento (corridos).
+function diasFondeo(venc) {
+  if (!venc) return null;
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const liq = sumarDiasHabiles(hoy, 1);
+  const v = parseLocalDate(venc);
+  if (!v) return null;
+  return Math.round((v - liq) / 86400000);
+}
+// Monto a devolver por 100 VN: interés compuesto diario + comisiones (sobre el saldo con interés).
+function deboCaucion(precioNeto, caucionTna, diasF) {
+  if (precioNeto === null || diasF === null || diasF <= 0) return null;
+  const { alic, iva, prorr } = getCostosCaucion();
+  const futuro = precioNeto * Math.pow(1 + caucionTna / 100 / 365, diasF);
+  return futuro + futuro * alic * (diasF / prorr) * (1 + iva);
+}
+// Ganancia vs caución = Valor Final − monto a devolver (interés + comisiones de tomar caución).
+function gananciaCaucion(vpv, precio, caucionTna, diasF) {
+  if (!vpv || !precio || diasF === null || diasF <= 0) return null;
+  const debo = deboCaucion(precio, caucionTna, diasF);
+  return debo === null ? null : vpv - debo;
+}
+// TNA BE (con comisiones): tasa de caución que hace ganancia = 0. Forma cerrada.
+function calcTnaBE(precio, vpv, diasF) {
+  if (!vpv || !precio || precio <= 0 || diasF === null || diasF <= 0) return null;
+  const { alic, iva, prorr } = getCostosCaucion();
+  const k = alic * (diasF / prorr) * (1 + iva);
+  return (Math.pow(vpv / (precio * (1 + k)), 1 / diasF) - 1) * 365 * 100;
 }
 function diasAlVenc(f) { if (!f) return null; const hoy = new Date(); hoy.setHours(0,0,0,0); const venc = parseLocalDate(f); if (!venc) return null; return Math.round((venc - hoy) / 86400000); }
 function fmtDate(s) { if (!s) return '—'; try { const d = parseLocalDate(s); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getFullYear()).slice(2)}`; } catch { return s; } }
@@ -453,13 +532,14 @@ function enriquecer() {
   if (ctEl) ctEl.textContent = total.toFixed(4) + '%';
   return lecaps.map(l => {
     const dias = diasAlVenc(l.venc);
+    const diasF = diasFondeo(l.venc);
     const precio = precios[l.ticker] || null;
     const precio_neto = precio !== null ? precio * (1 + (dm + ca) / 100) : null;
     const rend_directo = rendimientoDirecto(l.vpv, precio_neto);
     const rend_anual = rendimientoDirectoAnualizado(rend_directo, dias);
-    const spread = gananciaCaucion(l.vpv, precio_neto, caucionTna, dias);
-    const tna_be = calcTnaBE(precio_neto, l.vpv, dias);
-    return { ...l, dias, precio, precio_neto, rend_directo, rend_anual, spread, tna_be };
+    const spread = gananciaCaucion(l.vpv, precio_neto, caucionTna, diasF);
+    const tna_be = calcTnaBE(precio_neto, l.vpv, diasF);
+    return { ...l, dias, diasF, precio, precio_neto, rend_directo, rend_anual, spread, tna_be };
   }).filter(d => d.dias !== null && d.dias > 0); // excluir vencidas
 }
 
@@ -562,13 +642,15 @@ function calcSim() {
   if (!l) { out.innerHTML = '<div class="sim-empty">Instrumento no encontrado.</div>'; return; }
 
   const dias = diasAlVenc(l.venc);
+  const diasF = diasFondeo(l.venc);
   const nominales = precioNeto !== null ? Math.floor(monto / precioNeto * 100) : null;
   const montoReal = nominales !== null ? nominales / 100 * precioNeto : null;
   const valorVenc = (nominales !== null && l.vpv !== null) ? nominales / 100 * l.vpv : null;
   const gananciaPesos = (valorVenc !== null && montoReal !== null) ? valorVenc - montoReal : null;
-  const costoCaucion = (precioNeto !== null && nominales !== null && dias !== null && dias > 2)
-    ? (precioNeto * Math.pow(1 + caucionTna / 100 / 365, dias - 2)) * nominales / 100 : null;
-  const spread = gananciaCaucion(l.vpv, precioNeto, caucionTna, dias);
+  const deboUnit = deboCaucion(precioNeto, caucionTna, diasF);
+  const costoCaucion = (deboUnit !== null && nominales !== null)
+    ? deboUnit * nominales / 100 : null;
+  const spread = gananciaCaucion(l.vpv, precioNeto, caucionTna, diasF);
   const spreadPesos = (spread !== null && nominales !== null) ? spread * nominales / 100 : null;
   const noPrecio = precioAsk === null;
 
@@ -597,6 +679,7 @@ function toggleGlosario() {
 
 // ── INIT ─────────────────────────────────────────────────────
 async function init() {
+  await cargarFeriados();    // necesario para el T+1 hábil del plazo de fondeo
   await cargarExcel();
   cargarPreciosMonitor();
   actualizarSelectSim();
