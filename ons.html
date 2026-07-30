@@ -94,7 +94,7 @@
   /* TABLA PRINCIPAL */
   .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: visible; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
   /* Una tabla por tipo de bono; anchos fijos (colgroup) para que queden alineadas */
-  .tabla-grupo { width: 100%; border-collapse: collapse; min-width: 1150px; table-layout: fixed; }
+  .tabla-grupo { width: 100%; border-collapse: collapse; min-width: 1350px; table-layout: fixed; }
   .tabla-grupo td { overflow: hidden; text-overflow: ellipsis; }
 
   /* Título del grupo — sticky arriba de su sección */
@@ -134,6 +134,10 @@
   td.td-nombre { text-align: left; color: var(--text-2); font-size: 11px; min-width: 160px; font-family: var(--sans); }
 
   .no-p { color: var(--text-3); font-style: italic; font-size: 11px; }
+  /* Rating: escala nacional (arg/.ar) normal; escala global atenuada — no son comparables entre sí. */
+  .rt { font-weight: 700; font-size: 11px; cursor: help; white-space: nowrap; }
+  .rt-glob { font-weight: 600; font-style: italic; color: var(--text-3); }
+  .rt-sfx { font-size: 8.5px; font-weight: 600; opacity: .55; }  /* (arg) / .ar — marca la escala */
   .val-green { color: var(--green); font-weight: 500; }
   .val-cyan  { color: #17336f;  font-weight: 700; }
   .val-blue  { color: var(--blue);  font-weight: 500; }
@@ -1136,6 +1140,7 @@ const COLS = [
   { k:'ticker',  label:'Ticker',      w:7.0,  left:true, get:f=>f.inst.ticker,     cell:f=>`<td class="td-ticker">${f.inst.ticker}</td>` },
   { k:'nombre',  label:'Nombre',      w:11.0, left:true, get:f=>f.inst.nombre||'', cell:f=>`<td class="td-nombre">${f.inst.nombre||''}</td>` },
   { k:'industria', label:'Industria', w:10.5, left:true, get:f=>industriaDe(f.inst), cell:f=>`<td class="td-nombre">${industriaDe(f.inst)}</td>` },
+  { k:'rating',  label:'Rating',      w:11.0, get:f=>ratingRank(f.inst), cell:f=>ratingCell(f.inst) },
   { k:'divisa',  label:'Divisa de pago', w:8.0, left:true, get:f=>f.inst.divisa||'', cell:f=>`<td>${f.inst.divisa||'—'}</td>` },
   { k:'precio',  label:'Precio',      w:9.2,  get:f=>f.m.precio, cell:f=>`<td><input class="precio-cell-input${f.m.precio?' has-value':''}" id="inp-${f.inst.ticker}" type="number" step="0.01" placeholder="—" value="${f.m.precio?f.m.precio.toFixed(2):''}" oninput="onPrecioChange('${f.inst.ticker}', this.value)"></td>` },
   { k:'ultop',   label:'Últ. op.',    w:9.0,  get:f=>actUltOpMs(f.inst.ticker), cell:f=>`<td style="font-size:11px">${fmtUltOp(actUltOp(f.inst.ticker))}</td>` },
@@ -1164,6 +1169,7 @@ let _filasPorTk = {};  // ticker -> fila (para filtrar sin re-render, conservand
 // Valor filtrable de una columna: fechas/última-op como texto legible; el resto, el accesor de orden.
 function filtroValor(c, fila){
   if (c.k === 'venc') return fmtDate(fila.inst.venc);
+  if (c.k === 'rating') { const r = ratingDe(fila.inst); return r && r.r ? r.r : ''; }  // filtra por la nota, no por el rank
   if (c.k === 'ultop') { const u = actUltOp(fila.inst.ticker); if (!u) return ''; const d = new Date(u); if (isNaN(d)) return ''; const a = new Date(d.getTime() - 3*3600000); const p = n => String(n).padStart(2,'0'); return `${p(a.getUTCDate())}/${p(a.getUTCMonth()+1)} ${p(a.getUTCHours())}:${p(a.getUTCMinutes())}:${p(a.getUTCSeconds())}`; }
   return c.get(fila);
 }
@@ -2015,6 +2021,91 @@ function emisorDe(inst){
   return _emisorPorTicker[String(o || '').toUpperCase()] || null;
 }
 function industriaDe(inst){ const e = emisorDe(inst); return e ? (INDUSTRIA[e] || '—') : '—'; }
+
+// ── RATING crediticio por emisor (columna Rating) ─────────────
+// 1816 no expone la calificación: se carga a mano por emisor, igual que INDUSTRIA.
+// Fuentes: FIX SCR (Fitch Argentina, sufijo "(arg)") y Moody's Local Argentina (sufijo ".ar").
+// e:'nac' = escala nacional argentina (compara riesgo RELATIVO dentro del país).
+// e:'glob' = escala global (para emisores sin nota nacional). Las dos escalas NO son comparables.
+// Al sumar un emisor nuevo hay que agregarlo acá; si no, la columna muestra "—".
+const RATINGS = {
+  "Arcor": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-15", e:'nac'},
+  "B. Galicia": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-02", e:'nac'},
+  "B. Macro": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-28", e:'nac'},
+  "B. Mariva": {r:"A.ar", a:"Moody's Local AR", p:"Estable", f:"2026-06-23", e:'nac'},
+  "BBVA Argentina": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-04", e:'nac'},
+  "BCRA": {r:null, e:'nr'},
+  "CABA": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-04-30", e:'nac'},
+  "CGC": {r:"AA-(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-29", e:'nac'},
+  "CNH": {r:"AA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-06", e:'nac'},
+  "Capex": {r:"AA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-22", e:'nac'},
+  "Central Puerto": {r:"AA+(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-08", e:'nac'},
+  "Cordoba": {r:"AA(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-01", e:'nac'},
+  "Cresud": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-04-24", e:'nac'},
+  "Edemsa": {r:"A+(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-24", e:'nac'},
+  "Edenor": {r:"A+(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-29", e:'nac'},
+  "Entre Rios": {r:"BBB-(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-07", e:'nac'},
+  "GEMSA-CTR": {r:"D(arg)", a:"FIX SCR", p:"—", f:"2026-04-14", e:'nac'},
+  "Genneia": {r:"AA+.ar", a:"Moody's Local AR", p:"Estable", f:"2026-04-21", e:'nac'},
+  "Grupo ST": {r:"A+(arg)", a:"FIX SCR", p:"Estable", f:"2026-04-13", e:'nac'},
+  "IRSA": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-01", e:'nac'},
+  "Irsa Prop": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-01", e:'nac'},
+  "John Deere": {r:"AA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-28", e:'nac'},
+  "Loma Negra": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-04", e:'nac'},
+  "Luz de Tres Picos": {r:"AA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-08", e:'nac'},
+  "MSU Energy": {r:"AA-(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-08", e:'nac'},
+  "MSU Green Energy": {r:"AA-(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-07", e:'nac'},
+  "Mendoza": {r:"A-.ar", a:"Moody's Local AR", p:"Estable", f:"2026-06-02", e:'nac'},
+  "Mirgor": {r:"A+.ar", a:"Moody's Local AR", p:"Estable", f:"2026-04-17", e:'nac'},
+  "Neuquen": {r:"A-(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-01", e:'nac'},
+  "Oleoductos del Valle": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-07", e:'nac'},
+  "PBA": {r:"BB.ar", a:"Moody's Local AR", p:"Estable", f:"2026-05-08", e:'nac'},
+  "PCR": {r:"AA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-08", e:'nac'},
+  "Pampa Energia": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-27", e:'nac'},
+  "Pan American Energy": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-23", e:'nac'},
+  "Pecom Servicios Energia": {r:"AA(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-29", e:'nac'},
+  "Pluspetrol": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-24", e:'nac'},
+  "Profertil": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-04-29", e:'nac'},
+  "República Argentina": {r:"B-", a:"S&P / Fitch", p:"Estable", f:"2026-06-10", e:'glob'},
+  "Santa Fe": {r:"AA+(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-01", e:'nac'},
+  "Tarjeta Naranja": {r:"AA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-19", e:'nac'},
+  "Tecpetrol": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-15", e:'nac'},
+  "Telecom Argentina": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-28", e:'nac'},
+  "Transportadora de Gas del Sur": {r:"B", a:"S&P / Fitch", p:"Estable", f:"2026-06-10", e:'glob'},
+  "Vista Energy Argentina": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-08", e:'nac'},
+  "YPF": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-07", e:'nac'},
+  "YPF Luz": {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-06", e:'nac'},
+};
+// Override por ticker: RUCED lo emite MSU S.A., no MSU Energy S.A. (notas distintas).
+const RATING_TICKER = {
+  "RUCED": {r:"A+(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-05", e:'nac'},
+};
+const RATING_ESCALA = ['AAA','AA+','AA','AA-','A+','A','A-','BBB+','BBB','BBB-','BB+','BB','BB-','B+','B','B-','CCC+','CCC','CCC-','CC','C','D'];
+function ratingDe(inst){
+  const t = String(inst.ticker || '').toUpperCase();
+  if (RATING_TICKER[t]) return RATING_TICKER[t];
+  const e = emisorDe(inst);
+  return e ? (RATINGS[e] || null) : null;
+}
+// Puntaje para ordenar: más alto = mejor nota (el primer click ordena de mejor a peor).
+// Las escalas se ordenan en bloques separados: primero las nacionales, después las globales
+// (no son comparables entre sí), y al final los que no tienen nota.
+function ratingRank(inst){
+  const r = ratingDe(inst);
+  if (!r || !r.r) return -1;
+  const i = RATING_ESCALA.indexOf(r.r.replace(/\(arg\)|\.ar/i, '').trim());
+  const q = i < 0 ? 0 : (RATING_ESCALA.length - i);
+  return r.e === 'glob' ? q : 1000 + q;
+}
+function ratingCell(inst){
+  const r = ratingDe(inst);
+  if (!r || !r.r) return '<td><span class="no-p">—</span></td>';
+  const esc = r.e === 'glob' ? 'escala global' : 'escala nacional argentina';
+  const tip = `${r.a} · ${esc} · perspectiva ${r.p || '—'} · ${r.f || ''}`;
+  // El sufijo de escala ((arg)/.ar) se muestra chico para que la nota entre en la celda.
+  const txt = r.r.replace(/(\(arg\)|\.ar)$/i, m => `<span class="rt-sfx">${m}</span>`);
+  return `<td><span class="rt${r.e === 'glob' ? ' rt-glob' : ''}" title="${tip}">${txt}</span></td>`;
+}
 
 // Periodicidad de cupón y tipo de amortización — derivadas del cronograma de flujos (sin scrapear).
 // Un ON sin flujos cargados (⚡) muestra "—".
