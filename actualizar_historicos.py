@@ -44,12 +44,39 @@ MONEDA_1816 = {
     # a Eco y guardaban basura (precios en pesos/volumen) que rompía los retornos.
     'Subsoberanos': 'mep',
 }
+# Hojas que NO deben caer a Eco: Eco no las publica en dólares y devuelve el precio en PESOS,
+# que entra al histórico ~1.500x más grande y destroza los retornos (una sola celda mala hace
+# que el WTD/MTD del bono muestre -99%). Si 1816 no tiene el precio, se prefiere dejar el hueco.
+HOJAS_SIN_ECO = {'Subsoberanos', 'ONs', 'ON USD'}
+# Guarda de escala: un precio que se aparta de la mediana reciente del propio ticker por más de
+# este factor es casi seguro otra moneda u otra unidad; se descarta en vez de contaminar la serie.
+FACTOR_ESCALA = 5
+
 # Bopreales: el ticker de 1816 es irregular (no es un simple swap), mapa explícito.
 MAPA_BOPREAL_1816 = {
     # Patrón: BP{XX}D -> BPO{XX}. Se deja explícito por si alguna serie no lo respeta.
     'BPA7D': 'BPOA7', 'BPB7D': 'BPOB7', 'BPC7D': 'BPOC7', 'BPD7D': 'BPOD7',
     'BPA8D': 'BPOA8', 'BPB8D': 'BPOB8',
 }
+
+def medianas_recientes(ws, header, ruedas=20):
+    """Mediana de las últimas `ruedas` cotizaciones guardadas de cada ticker.
+    Sirve de referencia de escala: si el precio nuevo se aparta muchísimo, es otra moneda.
+    Devuelve {} si la hoja todavía no tiene historia suficiente (no aplica la guarda)."""
+    medianas = {}
+    for ticker, col in header.items():
+        vals = []
+        for row in range(ws.max_row, 1, -1):
+            v = ws.cell(row=row, column=col).value
+            if isinstance(v, (int, float)) and v > 0:
+                vals.append(v)
+                if len(vals) >= ruedas:
+                    break
+        if len(vals) >= 3:          # con 1-2 datos la mediana no es confiable
+            vals.sort()
+            medianas[ticker] = vals[len(vals) // 2]
+    return medianas
+
 
 def resolver_1816(sheet_name, eco_ticker, master_ticker):
     """Devuelve (ticker_1816, moneda) para consultar 1816, o (None, None) si no aplica.
@@ -118,7 +145,8 @@ def leer_tickers():
             vistos.add(eco_ticker)
 
             t1816, moneda = resolver_1816(sheet_name, eco_ticker, ticker)
-            items.append({'eco': eco_ticker, 't1816': t1816, 'moneda': moneda})
+            items.append({'eco': eco_ticker, 't1816': t1816, 'moneda': moneda,
+                          'hoja': sheet_name})
 
     print(f"Tickers leídos desde {INSTRUMENTOS_FILE}: {len(items)}")
     return items
@@ -300,14 +328,21 @@ def actualizar_historicos():
     # Precios primero desde 1816 (fuente primaria); lo que falte, desde Eco.
     precios_api = fetch_precios_1816(items, fecha=fecha_1816)
 
+    # Mediana reciente por ticker (últimas ruedas ya guardadas), para la guarda de escala.
+    medianas = medianas_recientes(ws, header)
+
     n1816 = 0
     neco = 0
     err = 0
+    descartados = 0
     for it in items:
         ticker = it['eco']
         precio = precios_api.get(ticker)
         if precio is not None:
             fuente = "1816"
+        elif it.get('hoja') in HOJAS_SIN_ECO:
+            # Eco devolvería el precio en pesos para estos: mejor dejar el hueco.
+            precio, fuente = None, "sin-eco"
         else:
             # Fallback: scraping de Eco Valores (comportamiento original).
             print(f"  Fetching {ticker} (Eco)...", end=" ")
@@ -315,6 +350,13 @@ def actualizar_historicos():
             print(f"${precio}" if precio else "sin precio")
             time.sleep(0.4)  # throttle solo cuando efectivamente pegamos a Eco
             fuente = "eco"
+
+        # Guarda de escala: descartar valores que no pueden ser el mismo instrumento.
+        med = medianas.get(ticker)
+        if precio and med and (precio > med * FACTOR_ESCALA or precio < med / FACTOR_ESCALA):
+            print(f"  DESCARTADO {ticker}: {precio} vs mediana {med:.2f} ({fuente}) — ¿otra moneda?")
+            precio = None
+            descartados += 1
 
         if precio:
             ws.cell(row=next_row, column=header[ticker], value=precio)

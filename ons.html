@@ -313,6 +313,8 @@ let historicos = {}; // { ticker: { 'YYYY-MM-DD': precio } }
 // Indicadores que calcula 1816 (tea/durationMod/paridad), sólo para los grupos de los que
 // NO tenemos cronograma de flujos y por eso no se computan localmente (hoy: subsoberanos).
 let indicadores1816 = {};
+// Fecha de la rueda a la que corresponden los precios cargados (la informa /api/precios).
+let fechaRueda = null;
 // Actividad del día por instrumento (volumen nominal sumando los 3 segmentos + última operación).
 // Viene de /api/actividad (caché 5 min). Es una columna de contexto; no bloquea los precios.
 let actividad = {};
@@ -1052,11 +1054,12 @@ function calcYTD(inst, ticker, precioHoy) {
 
 function calcDay(inst, ticker, precioHoy) {
   if (!precioHoy) return null;
-  const hoy = dateToStr(new Date());
   const data = historicos[ticker];
   if (!data) return null;
-  // Última fecha con dato anterior a hoy
-  const fechas = Object.keys(data).filter(f => f < hoy).sort();
+  // La base es el cierre anterior a la RUEDA DEL PRECIO, no a la fecha de hoy: si hoy todavía
+  // no operó, 1816 devuelve el cierre de la rueda anterior, y compararlo contra sí mismo daría 0%.
+  const corte = fechaRueda || dateToStr(new Date());
+  const fechas = Object.keys(data).filter(f => f < corte).sort();
   if (!fechas.length) return null;
   const fechaBase = fechas[fechas.length - 1];
   const precioBase = data[fechaBase];
@@ -1666,6 +1669,8 @@ async function fetchPreciosYahoo(force = false) {
     // por si quedó una respuesta vieja en caché.
     const mapaPrecios = data.precios || data;
     indicadores1816 = data.indicadores || {};
+    // Rueda a la que corresponden estos precios (ver calcDay).
+    fechaRueda = data.fecha || null;
     for (const inst of vivos) {
       const p = mapaPrecios[inst.ticker.toUpperCase()];
       if (p && p > 0) { precios[inst.ticker] = p; ok++; } else err++;

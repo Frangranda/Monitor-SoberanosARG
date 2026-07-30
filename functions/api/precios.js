@@ -177,10 +177,16 @@ async function computePrecios(env, items) {
   const result = {};
   const indicadores = {};   // solo los pedidos con `ind`: TIR/M.Dur/paridad que ya calcula 1816
   const monedas = Object.keys(porMoneda);
+  // Rueda a la que corresponden los precios devueltos. El front la necesita: si hoy todavía no
+  // operó (o es feriado), acá vuelve el cierre de la rueda anterior, y comparar eso contra el
+  // último cierre guardado daría 0% de variación en todo el panel.
+  let fechaRueda = null;
   if (apiKey && monedas.length) {
     // Una sola resolución de fecha para todas las monedas (fin de semana/feriado -> última rueda).
     const ref = porMoneda[monedas[0]][0];
     const fecha = await resolverFecha(apiKey, ref.t, ref.moneda);
+    // resolverFecha devuelve null cuando la rueda es la de hoy.
+    fechaRueda = fecha || fechaART(0).toISOString().slice(0, 10);
     for (const clave of monedas) {
       const pares = porMoneda[clave];
       const moneda = pares[0].moneda;
@@ -218,7 +224,7 @@ async function computePrecios(env, items) {
     const p = await fallbackEco(grupoDe[eco], eco);
     if (p) result[eco] = p;
   }
-  return { precios: result, indicadores };
+  return { precios: result, indicadores, fecha: fechaRueda };
 }
 
 // --- helpers HTTP ---
