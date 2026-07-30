@@ -1272,13 +1272,13 @@ function setMoneda(m) {
 const RATINGS = {
   "BCRA": { nac: null, glob: null },
   "CABA": { nac: {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-04-30"}, glob: {r:"B-", a:"S&P", p:"Estable", f:"2026-06-18"} },
-  "Cordoba": { nac: {r:"AA(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-01"}, glob: null },
+  "Cordoba": { nac: {r:"AA(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-01"}, glob: {r:"B-", a:"Fitch", p:"Estable", f:""} },
   "Entre Rios": { nac: {r:"BBB-(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-07"}, glob: {r:"B-", a:"S&P", p:"Estable", f:"2026-06-18"} },
   "Mendoza": { nac: {r:"A-.ar", a:"Moody's Local AR", p:"Estable", f:"2026-06-02"}, glob: {r:"B-", a:"S&P", p:"Estable", f:"2026-06-18"} },
   "Neuquen": { nac: {r:"A-(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-01"}, glob: {r:"B-", a:"S&P", p:"Estable", f:"2026-06-18"} },
   "PBA": { nac: {r:"BB.ar", a:"Moody's Local AR", p:"Estable", f:"2026-05-08"}, glob: {r:"CCC+", a:"S&P", p:"Estable", f:"2026-06-18"} },
   "República Argentina": { nac: null, glob: {r:"B-", a:"S&P", p:"Estable", f:"2026-06-10"} },
-  "Santa Fe": { nac: {r:"AA+(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-01"}, glob: null },
+  "Santa Fe": { nac: {r:"AA+(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-01"}, glob: {r:"B2", a:"Moody's", p:"Estable", f:"2026-07-21"} },
 };
 // Todos los grupos soberanos comparten el emisor Nación; los BOPREAL los emite el BCRA.
 const RATING_GRUPO = {
@@ -1300,12 +1300,19 @@ function ratingDe(inst){
   const reg = e ? RATINGS[e] : null;
   return reg ? (reg[escalaDe(inst)] || null) : null;
 }
+// Equivalencia de la notación de Moody's a la de S&P/Fitch (sólo para ORDENAR: algunas notas
+// vienen de Moody's, ej. Santa Fe B2, y otras de Fitch/S&P, ej. Córdoba B-).
+const RATING_MOODYS = {Aaa:'AAA',Aa1:'AA+',Aa2:'AA',Aa3:'AA-',A1:'A+',A2:'A',A3:'A-',
+  Baa1:'BBB+',Baa2:'BBB',Baa3:'BBB-',Ba1:'BB+',Ba2:'BB',Ba3:'BB-',B1:'B+',B2:'B',B3:'B-',
+  Caa1:'CCC+',Caa2:'CCC',Caa3:'CCC-',Ca:'CC'};
 const RATING_ESCALA = ['AAA','AA+','AA','AA-','A+','A','A-','BBB+','BBB','BBB-','BB+','BB','BB-','B+','B','B-','CCC+','CCC','CCC-','CC','C','D','SD'];
 // Puntaje para ordenar: más alto = mejor nota (el primer click ordena de mejor a peor).
 function ratingRank(inst){
   const r = ratingDe(inst);
   if (!r || !r.r) return -1;
-  const i = RATING_ESCALA.indexOf(r.r.replace(/\(arg\)|\.ar/i, '').trim());
+  let n = r.r.replace(/\(arg\)|\.ar/i, '').trim();
+  if (RATING_MOODYS[n]) n = RATING_MOODYS[n];   // Aa2/B2/Caa1... -> equivalente S&P para poder ordenar
+  const i = RATING_ESCALA.indexOf(n);
   return i < 0 ? 0 : (RATING_ESCALA.length - i);
 }
 function ratingCell(inst){
