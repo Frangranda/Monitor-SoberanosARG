@@ -511,6 +511,39 @@ async function cargarExcel() {
   }
 }
 
+// ── UNIVERSO VIVO 1816 (/api/instrumentos, mismo que el detector del Monitor) ──
+// Agrega a `lecaps` las LECAPs que 1816 lista y NO están en el Excel: fila en blanco
+// (sin TEM => sin VPV ni cálculos) para que se vean y se les cargue la TEM después.
+// Si el endpoint no está disponible (local / sin Cloudflare Access), se ignora.
+async function cargarUniverso1816() {
+  try {
+    const r = await fetch('/api/instrumentos');
+    if (!r.ok) return;
+    const data = await r.json();
+    const vivos = (data.instrumentos || []).filter(x =>
+      x.grupo === 'lecap' && x.ticker && !x.ticker.includes('@') && !x.ticker.includes(' '));
+    const yaEstan = new Set(lecaps.map(l => l.ticker));
+    let agregadas = 0;
+    for (const x of vivos) {
+      if (yaEstan.has(x.ticker)) continue;
+      const venc = x.venc ? String(x.venc).slice(0, 10) : '';
+      if (!venc) continue;
+      const d = diasAlVenc(venc);
+      if (d === null || d <= 0) continue; // no vencidas
+      lecaps.push({
+        ticker: x.ticker, tipo: 'LECAP',
+        emision: x.emision ? String(x.emision).slice(0, 10) : '',
+        venc, tem: null, vpv: null, faltaTem: true,
+      });
+      agregadas++;
+    }
+    if (agregadas) {
+      const hora = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+      setStatus('ok', `${lecaps.length} instrumentos (${agregadas} sin TEM) · ${hora}`);
+    }
+  } catch { /* extra: si falla, seguimos solo con el Excel */ }
+}
+
 // ── SORT ─────────────────────────────────────────────────────
 function sortBy(col) {
   sortAsc = sortCol===col ? !sortAsc : (col==='ticker'||col==='venc'||col==='tipo');
@@ -567,7 +600,9 @@ function renderTabla() {
     if (!tr) {
       tr = document.createElement('tr');
       tr.dataset.ticker = d.ticker;
-      const tipoBadge = d.tipo==='BONCAP'
+      const tipoBadge = d.faltaTem
+        ? `<span title="1816 la lista pero falta su TEM en el Excel" style="background:#fee2e2;color:#dc3545;border:1px solid #fca5a5;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;">FALTA TEM</span>`
+        : d.tipo==='BONCAP'
         ? `<span style="background:#fef3c7;color:#e08e16;border:1px solid #fcd34d;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;">BONCAP</span>`
         : `<span style="background:#dcfce7;color:#198754;border:1px solid #86efac;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;">LECAP</span>`;
       tr.innerHTML = `
@@ -681,6 +716,7 @@ function toggleGlosario() {
 async function init() {
   await cargarFeriados();    // necesario para el T+1 hábil del plazo de fondeo
   await cargarExcel();
+  await cargarUniverso1816(); // agrega LECAPs vivas de 1816 que no están en el Excel (fila en blanco)
   cargarPreciosMonitor();
   actualizarSelectSim();
   await cargarCaucionBCRA(); // pre-carga caución + recalcCaucion() → renderTabla()
