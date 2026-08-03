@@ -2041,6 +2041,7 @@ const RATINGS = {
   "Arcor": { nac: {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-05-15"}, glob: null },
   "B. Galicia": { nac: {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-02"}, glob: {r:"B-", a:"Fitch", p:"Estable", f:""} },
   "B. Macro": { nac: {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-28"}, glob: null },
+  "B. ICBC": { nac: {r:"A1+(arg)", a:"FIX SCR", p:"Estable", f:""}, glob: null },
   "B. Mariva": { nac: {r:"A.ar", a:"Moody's Local AR", p:"Estable", f:"2026-06-23"}, glob: null },
   "BBVA Argentina": { nac: {r:"AAA(arg)", a:"FIX SCR", p:"Estable", f:"2026-06-04"}, glob: null },
   "CGC": { nac: {r:"AA-(arg)", a:"FIX SCR", p:"Estable", f:"2026-07-29"}, glob: {r:"B-", a:"Fitch", p:"Estable", f:""} },
@@ -2095,6 +2096,12 @@ const RATING_AG_CORTA = { 'FIX SCR':'FIX', "Moody's Local AR":"Moody's", "Moody'
 const RATING_MOODYS = {Aaa:'AAA',Aa1:'AA+',Aa2:'AA',Aa3:'AA-',A1:'A+',A2:'A',A3:'A-',
   Baa1:'BBB+',Baa2:'BBB',Baa3:'BBB-',Ba1:'BB+',Ba2:'BB',Ba3:'BB-',B1:'B+',B2:'B',B3:'B-',
   Caa1:'CCC+',Caa2:'CCC',Caa3:'CCC-',Ca:'CC'};
+// Escala de CORTO PLAZO (FIX: A1+/A1/A2/A3...). Se usa en emisiones cortas, como la ON de
+// B. ICBC a 2027. La equivalencia con la escala de largo es aproximada y sirve SOLO para
+// ordenar; lo que se muestra es siempre la nota original.
+// Sólo los códigos inequívocos: B/C/D existen también en la escala de largo plazo (Edemsa,
+// TGS, YPF y el soberano son "B" de largo) y mapearlos acá los reordenaría mal.
+const RATING_CORTO = {'A1+':'AAA','A1':'AA','A2':'A','A3':'BBB'};
 const RATING_ESCALA = ['AAA','AA+','AA','AA-','A+','A','A-','BBB+','BBB','BBB-','BB+','BB','BB-','B+','B','B-','CCC+','CCC','CCC-','CC','C','D','SD'];
 // Puntaje para ordenar: más alto = mejor nota (el primer click ordena de mejor a peor).
 function ratingRank(inst){
@@ -2102,6 +2109,7 @@ function ratingRank(inst){
   if (!r || !r.r) return -1;
   let n = r.r.replace(/\(arg\)|\.ar/i, '').trim();
   if (RATING_MOODYS[n]) n = RATING_MOODYS[n];   // Aa2/B2/Caa1... -> equivalente S&P para poder ordenar
+  else if (RATING_CORTO[n]) n = RATING_CORTO[n];  // A1+/A2... -> equivalente de largo plazo
   const i = RATING_ESCALA.indexOf(n);
   return i < 0 ? 0 : (RATING_ESCALA.length - i);
 }
