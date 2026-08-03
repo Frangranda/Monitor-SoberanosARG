@@ -48,6 +48,7 @@
   .badge-cer { background: #e8edf5; color: var(--navy); border: 1px solid var(--navy); }
   .badge-tamar { background: #dbeafe; color: #17336f; border: 1px solid #17336f; }
   .badge-lecap { background: #e2f4fc; color: var(--blue); border: 1px solid var(--blue); }
+  .badge-linked { background: #dcfce7; color: #198754; border: 1px solid #198754; }
   .badge-rec { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; }
   .badge-rec-dual { background: #fef3c7; color: var(--amber); border: 1px solid #fcd34d; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; }
   .no-comp { color: var(--text-3); font-style: italic; font-size: 11px; }
@@ -120,11 +121,11 @@ function fmtDate(s) { if (!s) return '—'; try { const d = parseLocalDate(s); r
 function showAlert(msg, tipo='err') { const el = document.getElementById('alert'); el.textContent = msg; el.className = 'alert show ' + tipo; }
 
 // Tipo de pata → grupo del bono puro comparable
-const PURO_DE_PATA = { 'CER': 'cer', 'TAMAR': 'tamar', 'LECAP': 'lecap' };
+const PURO_DE_PATA = { 'CER': 'cer', 'TAMAR': 'tamar', 'LECAP': 'lecap', 'LINKED': 'usdlinked' };
 const VENTANA_DIAS = 60; // ±2 meses
 
 function badgePata(tipo) {
-  const cls = tipo === 'CER' ? 'badge-cer' : tipo === 'TAMAR' ? 'badge-tamar' : 'badge-lecap';
+  const cls = tipo === 'CER' ? 'badge-cer' : tipo === 'TAMAR' ? 'badge-tamar' : tipo === 'LINKED' ? 'badge-linked' : 'badge-lecap';
   return `<span class="badge-pata ${cls}">${tipo}</span>`;
 }
 

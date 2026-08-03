@@ -1023,6 +1023,8 @@ function calcMetricas(inst) {
   if (inst.grupo === 'dual') {
     const pata = inst.pata;
     if (!pata) return { precio, dias, tna: null, tea: null, md: null, paridad: null };
+    // Duales TAMAR/Dólar Linked: la pata TAMAR cotiza en escala ×100 → se normaliza el precio.
+    const precioP = (pata.precioDiv100 && precio) ? precio / 100 : precio;
 
     let vf = null;
     if (pata.tipo === 'LECAP') {
@@ -1049,23 +1051,29 @@ function calcMetricas(inst) {
         const meses = diasBase / 360 * 12;
         vf = 100 * Math.pow(1 + tamarTEM, meses);
       }
+    } else if (pata.tipo === 'LINKED') {
+      // Valor final = 100 × TC aplicable (3 días hábiles antes de la liquidación T+1),
+      // igual que el USD Linked simple. La serie de venc es futura, se usa el TC de hoy.
+      const fechaTC = restarDiasHabiles(dateToStr(liq), 3);
+      const tcHoy = buscarUsdCache(fechaTC);
+      vf = tcHoy ? 100 * tcHoy : null;
     }
 
-    const paridad = (precio && vf) ? precio / vf * 100 : null;
-    if (!precio || !vf || dias <= 0) return { precio, dias, tna: null, tea: null, md: null, paridad };
+    const paridad = (precioP && vf) ? precioP / vf * 100 : null;
+    if (!precioP || !vf || dias <= 0) return { precio: precioP, dias, tna: null, tea: null, md: null, paridad };
 
     const vencDate = parseLocalDate(inst.venc);
     // Precio T+1: se descuenta desde la liquidación (T+1 hábil).
     const t = (vencDate - liq) / (365 * 86400000);
-    if (t <= 0) return { precio, dias, tna: null, tea: null, md: null, paridad };
+    if (t <= 0) return { precio: precioP, dias, tna: null, tea: null, md: null, paridad };
 
-    const tea_dec = Math.pow(vf / precio, 1 / t) - 1;
+    const tea_dec = Math.pow(vf / precioP, 1 / t) - 1;
     const tea = tea_dec * 100;
     const tna = (Math.pow(1 + tea_dec, 1/365) - 1) * 365 * 100;
-    // Convención de M.Dur según la pata: CER=semestral, TAMAR=cada 32 días, LECAP=efectiva anual (1816)
-    const invMdual = pata.tipo === 'CER' ? 1/2 : (pata.tipo === 'TAMAR' ? 32/365 : 1);
+    // Convención de M.Dur según la pata: CER=semestral, TAMAR=cada 32 días, LINKED=semestral, LECAP=efectiva anual (1816)
+    const invMdual = pata.tipo === 'CER' ? 1/2 : pata.tipo === 'TAMAR' ? 32/365 : pata.tipo === 'LINKED' ? 1/2 : 1;
     const md  = t / Math.pow(1 + tea_dec, invMdual);
-    return { precio, dias, tna, tea, md, paridad, vf };
+    return { precio: precioP, dias, tna, tea, md, paridad, vf };
   }
 
   // ── USD BOPREALES ─────────────────────────────────────────────
@@ -1711,14 +1719,18 @@ function parsearExcel(buffer) {
           pata.tem = parseFloat(r['TEM (%)']) || null;
           pata.vpv = calcVPV(pata.emision, pata.venc, pata.tem);
         }
+        if (tipo === 'LINKED') { pata.usd_aplicable = parseFloat(r['USD aplicable']) || null; pata.margen = normalizarMargen(r['Margen']); }
         patas[ticker].push(pata);
       });
 
       Object.entries(patas).forEach(([ticker, ps]) => {
+        const tieneLinked = ps.some(p => p.tipo === 'LINKED');
         ps.forEach(pata => {
-          result.push({ 
-            grupo: 'dual', 
-            ticker, 
+          // Duales TAMAR/Dólar Linked: la pata TAMAR cotiza en escala ×100 → marcar para dividir el precio.
+          if (pata.tipo === 'TAMAR' && tieneLinked) pata.precioDiv100 = true;
+          result.push({
+            grupo: 'dual',
+            ticker,
             nombre: pata.tipo,
             venc: pata.venc,
             pata, // single pata for this row
