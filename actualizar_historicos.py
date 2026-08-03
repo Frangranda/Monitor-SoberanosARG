@@ -214,6 +214,25 @@ def fetch_precios_1816(items, fecha=None):
     return resultado
 
 # ── FECHA DE LA RUEDA A REGISTRAR ─────────────────────────────
+# Referencias para detectar si una rueda tuvo mercado. Deben ser instrumentos MUY líquidos y
+# de vencimiento lejano: si la referencia vence, deja de tener datos y la resolución se clava
+# para siempre (le pasó a S31L6, que venció el 31-07-2026 y congeló el histórico 3 ruedas).
+# Se usan varias por si alguna no opera ese día; alcanza con que una tenga precio.
+REFERENCIAS_RUEDA = [('AL30', 'mep'), ('GD30', 'mep'), ('TZXO6', 'ars')]
+
+
+def referencias_rueda(items):
+    """Referencias a usar para detectar la última rueda con mercado.
+
+    Prioriza las de REFERENCIAS_RUEDA que estén en el universo; si ninguna está (el Excel
+    cambió mucho), cae a los primeros instrumentos mapeados, como antes."""
+    disponibles = {it['t1816'] for it in items if it['t1816']}
+    refs = [{'t1816': t, 'moneda': m} for t, m in REFERENCIAS_RUEDA if t in disponibles]
+    if refs:
+        return refs
+    return [it for it in items if it['t1816'] and it['moneda']][:3]
+
+
 def resolver_fecha_1816(items, max_dias=7):
     """Última rueda con datos en 1816, buscando hacia atrás desde hoy.
 
@@ -229,8 +248,8 @@ def resolver_fecha_1816(items, max_dias=7):
     cli = cliente_1816()
     if cli is None:
         return None
-    ref = next((it for it in items if it['t1816'] and it['moneda']), None)
-    if not ref:
+    refs = referencias_rueda(items)
+    if not refs:
         return None
     try:
         for i in range(max_dias + 1):
@@ -238,18 +257,20 @@ def resolver_fecha_1816(items, max_dias=7):
             if d.weekday() >= 5:          # sábado/domingo: ni consultamos
                 continue
             f = d.strftime("%Y-%m-%d")
-            # 1816 admite 1 req/seg: un 429 transitorio no debe degradar todo el día a Eco.
-            for intento in range(3):
-                try:
-                    filas = cli.precios([ref['t1816']], [CAMPO_1816],
-                                        moneda=ref['moneda'], fecha_operacion=f)
-                    break
-                except Exception:
-                    if intento == 2:
-                        raise
-                    time.sleep(2 * (intento + 1))
-            if filas and isinstance(filas[0].get(CAMPO_1816), (int, float)):
-                return f
+            # Alcanza con que UNA de las referencias haya operado ese día.
+            for ref in refs:
+                # 1816 admite 1 req/seg: un 429 transitorio no debe degradar todo el día a Eco.
+                for intento in range(3):
+                    try:
+                        filas = cli.precios([ref['t1816']], [CAMPO_1816],
+                                            moneda=ref['moneda'], fecha_operacion=f)
+                        break
+                    except Exception:
+                        if intento == 2:
+                            raise
+                        time.sleep(2 * (intento + 1))
+                if filas and isinstance(filas[0].get(CAMPO_1816), (int, float)):
+                    return f
     except Exception as e:
         print(f"AVISO: no se pudo resolver la fecha en 1816 ({e}).")
     return None
