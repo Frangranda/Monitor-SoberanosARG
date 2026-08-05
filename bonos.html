@@ -96,6 +96,10 @@
      más ancha que la pantalla. No se usa overflow-x:auto porque volvería a este div un
      contenedor de scroll y los encabezados sticky dejarían de pegarse al scroll de la página. */
   .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: visible; min-width: fit-content; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+  /* Cuando la vista Completa hace la tabla más ancha que el contenedor, la tarjeta se sale
+     del max-width de .wrap y usa el ancho de pantalla a AMBOS lados (no sólo hacia la
+     derecha). Así entran más columnas antes de tener que scrollear. */
+  .table-wrap.ancha { margin-left: calc(50% - 50vw + 12px); margin-right: calc(50% - 50vw + 12px); }
   /* Una tabla por tipo de bono; anchos fijos (colgroup) para que queden alineadas */
   .tabla-grupo { width: 100%; border-collapse: collapse; table-layout: fixed; }  /* el min-width se fija por JS según cuántas columnas muestre la vista */
   .tabla-grupo td { overflow: hidden; text-overflow: ellipsis; }
@@ -1518,6 +1522,19 @@ function colsDeGrupo(key){
              .filter(({ c }) => c.k !== 'rating' || RATING_GRUPOS.includes(key))
              .filter(({ c }) => colEnVista(c.k));
 }
+// Si la tabla no entra en el ancho del contenedor, se deja que la tarjeta ocupe todo el
+// viewport (a izquierda y derecha) en vez de desbordar sólo hacia un lado.
+function ajustarAnchoTabla(){
+  const tw = document.querySelector('.table-wrap');
+  if (!tw) return;
+  const t = tw.querySelector('table.tabla-grupo');
+  if (!t) { tw.classList.remove('ancha'); return; }
+  const necesita = parseFloat(t.style.minWidth) || t.scrollWidth;
+  const wrap = tw.closest('.wrap');
+  const disponible = wrap ? wrap.clientWidth - 48 : window.innerWidth - 48;
+  tw.classList.toggle('ancha', necesita > disponible + 1);
+}
+
 function colgroupHTML(key){
   return colsDeGrupo(key).map(({ c, i }) => `<col data-k="${c.k}" style="width:${colWidths[i]}%">`).join('');
 }
@@ -1608,6 +1625,7 @@ function renderTabla() {
   }
 
   cont.innerHTML = html || `<div class="empty-state" style="padding:40px;">No hay instrumentos en ${monedaActiva === 'pesos' ? 'pesos' : 'dólares'}</div>`;
+  ajustarAnchoTabla();
 
   // Guardar datos enriquecidos en localStorage para curvas.html
   try {
