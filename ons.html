@@ -94,7 +94,7 @@
   /* TABLA PRINCIPAL */
   .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: visible; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
   /* Una tabla por tipo de bono; anchos fijos (colgroup) para que queden alineadas */
-  .tabla-grupo { width: 100%; border-collapse: collapse; min-width: 1350px; table-layout: fixed; }
+  .tabla-grupo { width: 100%; border-collapse: collapse; min-width: 1500px; table-layout: fixed; }
   .tabla-grupo td { overflow: hidden; text-overflow: ellipsis; }
 
   /* Título del grupo — sticky arriba de su sección */
@@ -134,6 +134,16 @@
   td.td-nombre { text-align: left; color: var(--text-2); font-size: 11px; min-width: 160px; font-family: var(--sans); }
 
   .no-p { color: var(--text-3); font-style: italic; font-size: 11px; }
+  /* Comisión: control de la toolbar y sufijo de puntos básicos en la TEA */
+  .com-box { display:flex; align-items:center; gap:6px; }
+  .com-lbl { font-size:11px; color:var(--text-3); text-transform:uppercase; letter-spacing:.04em; }
+  .com-input { width:52px; padding:4px 6px; border:1px solid var(--border); border-radius:6px;
+               font-family:var(--mono); font-size:12px; text-align:right; background:var(--surface); color:var(--text-1); }
+  .com-lado { padding:4px 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface);
+              color:var(--text-2); font-size:11px; cursor:pointer; }
+  .com-lado.on { background:#17336f; color:#fff; border-color:#17336f; font-weight:600; }
+  .com-pb { font-size:8.5px; font-weight:600; opacity:.55; margin-left:3px; }
+
   /* Rating: escala nacional (arg/.ar) normal; escala global atenuada — no son comparables entre sí. */
   .rt { font-weight: 700; font-size: 11px; cursor: help; white-space: nowrap; }
   .rt-glob { font-weight: 600; font-style: italic; color: var(--text-3); }
@@ -230,6 +240,15 @@
     <span class="upload-st" id="yahoo-st"></span>
     <div class="sep-v"></div>
     <button class="btn btn-ghost" onclick="limpiarPrecios()">Limpiar precios</button>
+    <div class="sep-v"></div>
+    <div class="com-box" title="Precio de ejecución = precio de pantalla ± comisión. La TIR se recalcula a ese precio.">
+      <span class="com-lbl">Comisión</span>
+      <input id="com-input" class="com-input" type="text" inputmode="decimal" value="0,25"
+             onchange="onComisionInput(this.value)" onblur="onComisionInput(this.value)">
+      <span class="com-lbl">%</span>
+      <button class="com-lado on" data-lado="compra" onclick="setComisionLado('compra')">Compra</button>
+      <button class="com-lado" data-lado="venta" onclick="setComisionLado('venta')">Venta</button>
+    </div>
   </div>
 
   <!-- PANEL INDICADORES -->
@@ -724,6 +743,10 @@ function usaIndicadores1816(inst) {
 // Métricas tomadas de 1816 (las trae el proxy junto al precio). TNA derivada de la TEA en
 // convención semestral, igual que el resto de los bonos hard-dollar con cupón.
 function metricasDe1816(inst, precio, dias) {
+  // 1816 calcula estos indicadores al precio de mercado y no tenemos el cronograma para
+  // recalcularlos a otro precio. Si se pide a un precio distinto (comisión), se aproxima el
+  // desplazamiento de la TEA con la duration modificada: Δy ≈ -(ΔP/P)/MD. Queda marcado con
+  // `aproxComision` para poder avisarlo en la celda.
   const ind = indicadores1816[String(inst.ticker).toUpperCase()] || {};
   const num = v => (typeof v === 'number' && isFinite(v)) ? v : null;
   const teaDec  = num(ind.tea);
@@ -731,11 +754,68 @@ function metricasDe1816(inst, precio, dias) {
   const md      = num(ind.durationMod);
   const tea = teaDec === null ? null : teaDec * 100;
   const tna = teaDec === null ? null : (Math.pow(1 + teaDec, 1/2) - 1) * 2 * 100;
+  const pMkt = precios[inst.ticker] || null;
+  if (precio && pMkt && md && tea !== null && Math.abs(precio - pMkt) > 1e-9) {
+    const teaAj = tea - ((precio - pMkt) / pMkt) / md * 100;
+    return { precio, dias, tna, tea: teaAj, md, paridad, aproxComision: true };
+  }
   return { precio, dias, tna, tea, md, paridad };
 }
 
-function calcMetricas(inst) {
-  const precio = precios[inst.ticker] || null;
+
+// ── COMISIÓN ──────────────────────────────────────────────────
+// El precio que publica 1816 es el de pantalla; el que uno efectivamente ejecuta incluye la
+// comisión del broker: comprando se paga MÁS y vendiendo se cobra MENOS. La TIR se recalcula
+// con ese precio efectivo, así que el impacto sale del mismo modelo que la TIR de pantalla
+// (no es una aproximación) para todo instrumento con cronograma o fórmula propia.
+// El ajuste se guarda compartido entre Monitor y ONs.
+let comisionPct  = 0.25;        // % sobre el precio
+let comisionLado = 'compra';    // 'compra' | 'venta'
+try {
+  const c = localStorage.getItem('monitor_comision');
+  if (c !== null && isFinite(parseFloat(c))) comisionPct = parseFloat(c);
+  const l = localStorage.getItem('monitor_comision_lado');
+  if (l === 'compra' || l === 'venta') comisionLado = l;
+} catch { /* default */ }
+
+// Comprando el costo sube; vendiendo lo que se percibe baja.
+function factorComision() { return 1 + (comisionLado === 'compra' ? 1 : -1) * (comisionPct / 100); }
+function precioConComision(p) {
+  return (p === null || p === undefined || !isFinite(p)) ? null : p * factorComision();
+}
+function onComisionInput(v) {
+  const x = parseFloat(String(v).replace(',', '.'));
+  comisionPct = (isFinite(x) && x >= 0) ? x : 0;
+  try { localStorage.setItem('monitor_comision', String(comisionPct)); } catch {}
+  renderTabla();
+}
+function setComisionLado(l) {
+  comisionLado = l;
+  try { localStorage.setItem('monitor_comision_lado', l); } catch {}
+  document.querySelectorAll('.com-lado').forEach(b => b.classList.toggle('on', b.dataset.lado === l));
+  renderTabla();
+}
+function initComisionUI() {
+  const i = document.getElementById('com-input');
+  if (i) i.value = String(comisionPct).replace('.', ',');
+  document.querySelectorAll('.com-lado').forEach(b => b.classList.toggle('on', b.dataset.lado === comisionLado));
+}
+// Celda de TEA con comisión: la nota y, en chico, cuántos puntos básicos se pierden.
+function celdaTeaCom(f) {
+  const base = f.m && f.m.tea, con = f.mc && f.mc.tea;
+  if (base === null || base === undefined || con === null || con === undefined || !isFinite(con))
+    return '<td><span class="no-p">—</span></td>';
+  const pb = Math.round((con - base) * 100);          // 1% = 100 pb
+  const signo = pb > 0 ? '+' : '';
+  const aprox = f.mc && f.mc.aproxComision ? ' aprox.' : '';
+  const tip = `TEA ejecutando a ${fmtNum(f.mc.precio, 2)} (comisión ${String(comisionPct).replace('.', ',')}% de ${comisionLado})${aprox}`;
+  return `<td title="${tip}">${dash(con, 2, '%', 'val-cyan')}<span class="com-pb">${signo}${pb}pb</span></td>`;
+}
+function fmtNum(v, d) { return (v === null || v === undefined || !isFinite(v)) ? '—' : v.toFixed(d); }
+
+function calcMetricas(inst, precioAlt) {
+  // precioAlt permite recalcular todo a un precio distinto del de mercado (ver comisión).
+  const precio = (precioAlt !== undefined && precioAlt !== null) ? precioAlt : (precios[inst.ticker] || null);
   const dias   = diasAlVenc(inst.venc);
   if (usaIndicadores1816(inst)) return metricasDe1816(inst, precio, dias);
   const hoy    = new Date(); hoy.setHours(0,0,0,0);
@@ -1147,6 +1227,8 @@ const COLS = [
   { k:'rating',  label:'Rating',      w:16.0, get:f=>ratingRank(f.inst), cell:f=>ratingCell(f.inst) },
   { k:'divisa',  label:'Divisa de pago', w:8.0, left:true, get:f=>f.inst.divisa||'', cell:f=>`<td>${f.inst.divisa||'—'}</td>` },
   { k:'precio',  label:'Precio',      w:9.2,  get:f=>f.m.precio, cell:f=>`<td><input class="precio-cell-input${f.m.precio?' has-value':''}" id="inp-${f.inst.ticker}" type="number" step="0.01" placeholder="—" value="${f.m.precio?f.m.precio.toFixed(2):''}" oninput="onPrecioChange('${f.inst.ticker}', this.value)"></td>` },
+  { k:'precioCom', label:'P. ejec.', w:8.0, get:f=>f.mc.precio, cell:f=>`<td title="Precio de ejecución (${comisionLado}, comisión ${String(comisionPct).replace('.',',')}%)">${f.mc.precio!=null&&isFinite(f.mc.precio)?fmtNum(f.mc.precio,2):'<span class=\"no-p\">—</span>'}</td>` },
+  { k:'teaCom',    label:'TEA ejec.',  w:8.5, get:f=>f.mc.tea, cell:f=>celdaTeaCom(f) },
   { k:'ultop',   label:'Últ. op.',    w:9.0,  get:f=>actUltOpMs(f.inst.ticker), cell:f=>`<td style="font-size:11px">${fmtUltOp(actUltOp(f.inst.ticker))}</td>` },
   { k:'voldia',  label:'Vol. día (nom)', w:8.5, get:f=>actVol(f.inst.ticker), cell:f=>`<td>${(()=>{const v=actVol(f.inst.ticker);return v==null?'<span class="no-p">—</span>':fmtMiles(v);})()}</td>` },
   { k:'venc',    label:'Vencimiento', w:9.3,  get:f=>f.dias,     cell:f=>`<td>${fmtDate(f.inst.venc)}</td>` },
@@ -1249,8 +1331,9 @@ function renderTabla() {
     const diasInst = diasAlVenc(inst.venc);
     if (diasInst !== null && diasInst <= 0) continue;               // saltar vencidos
     const m = calcMetricas(inst);
+    const mc = calcMetricas(inst, precioConComision(m.precio));
     const th = tickerHistorico(inst);
-    filas.push({ inst, m, dias: m.dias,
+    filas.push({ inst, m, mc, dias: m.dias,
       day: calcDay(inst, th, m.precio), wtd: calcWTD(inst, th, m.precio),
       mtd: calcMTD(inst, th, m.precio), ytd: calcYTD(inst, th, m.precio) });
   }
@@ -2245,6 +2328,7 @@ async function cargarExcelGitHub() {
     showAlert('No se pudo cargar Instrumentos.xlsx: ' + e.message);
   }
 }
+initComisionUI();
 cargarExcelGitHub();
 </script>
 </body>
