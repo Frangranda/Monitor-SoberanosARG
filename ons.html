@@ -1270,7 +1270,7 @@ const VISTAS = {
   ficha:       { label:'Ficha',       cols:['ticker','nombre','industria','rating','divisa','venc','dias','period','amort'] },
   completa:    { label:'Completa',    cols:null },
 };
-let vistaActiva = 'operar';
+let vistaActiva = 'completa';
 try { const v = localStorage.getItem('monitor_vista'); if (v && VISTAS[v]) vistaActiva = v; } catch {}
 function setVista(v){
   if (!VISTAS[v]) return;
