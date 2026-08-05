@@ -92,7 +92,10 @@
   .alert.info { background:#f0fdf4; border:1px solid #86efac; color:var(--green); }
 
   /* TABLA PRINCIPAL */
-  .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: visible; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+  /* min-width:fit-content -> el recuadro acompaña a la tabla cuando la vista Completa la hace
+     más ancha que la pantalla. No se usa overflow-x:auto porque volvería a este div un
+     contenedor de scroll y los encabezados sticky dejarían de pegarse al scroll de la página. */
+  .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: visible; min-width: fit-content; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
   /* Una tabla por tipo de bono; anchos fijos (colgroup) para que queden alineadas */
   .tabla-grupo { width: 100%; border-collapse: collapse; table-layout: fixed; }  /* el min-width se fija por JS según cuántas columnas muestre la vista */
   .tabla-grupo td { overflow: hidden; text-overflow: ellipsis; }
