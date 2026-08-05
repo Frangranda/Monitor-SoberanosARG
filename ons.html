@@ -1243,12 +1243,23 @@ function setLey(l) {
 }
 
 // ── ORDENAMIENTO DE COLUMNAS (dentro de cada grupo de bonos) ──
-// Columnas: label + ancho % (para colgroup) + accessor de orden + cómo se dibuja la celda.
+// Columnas: label + ancho % (para colgroup) + accessor de orden + cómo se dibuja la celda.// Grupos que NO se le piden a Eco: no los publica en dólares y devuelve el precio en PESOS,
+// que en un bono hard-dollar da precios de 6 cifras, paridades de 150.000% y TIR negativas.
+// Es la misma lista que ya aplica el proxy (functions/api/precios.js, SIN_ECO). Preferimos
+// dejar el precio vacío antes que mostrar uno en otra moneda.
+const SIN_ECO = ['subsoberano', 'onlocal', 'onny'];
+
+// Los precios en pesos (dólar-linked) son de 6 cifras: con dos decimales no se leen.
+function fmtPrecioInput(v){
+  if (v === null || v === undefined || !isFinite(v)) return '';
+  return Math.abs(v) >= 1000 ? v.toFixed(0) : v.toFixed(2);
+}
+
 // Segunda línea del precio: lo que realmente se ejecuta, con la comisión puesta.
 function subPrecioEjec(f){
   if (!comisionPct || !f.m.precio || !f.mc || !isFinite(f.mc.precio)) return '';
   const flecha = comisionLado === 'compra' ? '▲' : '▼';
-  return `<span class="pexec" title="Precio de ejecución ${comisionLado} (comisión ${String(comisionPct).replace('.',',')}%)">${flecha} ${f.mc.precio.toFixed(2)}</span>`;
+  return `<span class="pexec" title="Precio de ejecución ${comisionLado} (comisión ${String(comisionPct).replace('.',',')}%)">${flecha} ${fmtPrecioInput(f.mc.precio)}</span>`;
 }
 // Segunda línea de la TEA: la TIR al precio de ejecución. SÓLO en compra — comprando esa es
 // la tasa que uno se lleva. Vendiendo no: la TIR sobre el precio neto del vendedor es la que
@@ -1293,7 +1304,7 @@ const COLS = [
   { k:'industria', label:'Industria', w:10.5, left:true, get:f=>industriaDe(f.inst), cell:f=>`<td class="td-nombre">${industriaDe(f.inst)}</td>` },
   { k:'rating',  label:'Rating',      w:16.0, get:f=>ratingRank(f.inst), cell:f=>ratingCell(f.inst) },
   { k:'divisa',  label:'Divisa de pago', w:8.0, left:true, get:f=>f.inst.divisa||'', cell:f=>`<td>${f.inst.divisa||'—'}</td>` },
-  { k:'precio',  label:'Precio',      w:9.2, get:f=>f.m.precio, cell:f=>`<td><div class="pcell"><input class="precio-cell-input${f.m.precio?' has-value':''}" id="inp-${f.inst.ticker}" type="number" step="0.01" placeholder="—" value="${f.m.precio?f.m.precio.toFixed(2):''}" oninput="onPrecioChange('${f.inst.ticker}', this.value)">${subPrecioEjec(f)}</div></td>` },
+  { k:'precio',  label:'Precio',      w:9.2, get:f=>f.m.precio, cell:f=>`<td><div class="pcell"><input class="precio-cell-input${f.m.precio?' has-value':''}" id="inp-${f.inst.ticker}" type="number" step="0.01" placeholder="—" value="${fmtPrecioInput(f.m.precio)}" oninput="onPrecioChange('${f.inst.ticker}', this.value)">${subPrecioEjec(f)}</div></td>` },
   { k:'ultop',   label:'Últ. op.',    w:9.0,  get:f=>actUltOpMs(f.inst.ticker), cell:f=>`<td style="font-size:11px">${fmtUltOp(actUltOp(f.inst.ticker))}</td>` },
   { k:'voldia',  label:'Vol. día (nom)', w:8.5, get:f=>actVol(f.inst.ticker), cell:f=>`<td>${(()=>{const v=actVol(f.inst.ticker);return v==null?'<span class="no-p">—</span>':fmtMiles(v);})()}</td>` },
   { k:'venc',    label:'Vencimiento', w:9.3,  get:f=>f.dias,     cell:f=>`<td>${fmtDate(f.inst.venc)}</td>` },
@@ -1849,6 +1860,7 @@ async function fetchPreciosYahoo(force = false) {
     stEl.textContent = 'Proxy no disponible, usando Eco...';
     ok = 0; err = 0;
     for (const inst of vivos) {
+      if (SIN_ECO.includes(inst.grupo)) { err++; continue; }   // Eco los daría en pesos
       const tickerEco = (inst.grupo === 'usdbonares' || inst.grupo === 'usdglobales')
         ? inst.ticker + 'D' : inst.ticker;
       try {
