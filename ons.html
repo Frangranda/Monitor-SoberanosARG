@@ -94,7 +94,7 @@
   /* TABLA PRINCIPAL */
   .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: visible; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
   /* Una tabla por tipo de bono; anchos fijos (colgroup) para que queden alineadas */
-  .tabla-grupo { width: 100%; border-collapse: collapse; min-width: 1500px; table-layout: fixed; }
+  .tabla-grupo { width: 100%; border-collapse: collapse; table-layout: fixed; }  /* el min-width se fija por JS según cuántas columnas muestre la vista */
   .tabla-grupo td { overflow: hidden; text-overflow: ellipsis; }
 
   /* Título del grupo — sticky arriba de su sección */
@@ -143,6 +143,15 @@
               color:var(--text-2); font-size:11px; cursor:pointer; }
   .com-lado.on { background:#17336f; color:#fff; border-color:#17336f; font-weight:600; }
   .com-pb { font-size:8.5px; font-weight:600; opacity:.55; margin-left:3px; }
+  /* El precio y la TEA llevan debajo, en chico, su versión con comisión: evita 2 columnas */
+  .pcell { display:flex; flex-direction:column; align-items:flex-end; gap:1px; }
+  .pexec { font-size:9px; font-weight:600; color:var(--text-3); font-family:var(--mono); cursor:help; }
+  .tneta { display:block; font-size:9px; font-weight:600; color:var(--text-3); font-family:var(--mono); cursor:help; }
+  .tneta i { font-style:normal; opacity:.7; }
+  .vista-btn { padding:4px 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface);
+               color:var(--text-2); font-size:11px; cursor:pointer; }
+  .vista-btn.on { background:#17336f; color:#fff; border-color:#17336f; font-weight:600; }
+
 
   /* Rating: escala nacional (arg/.ar) normal; escala global atenuada — no son comparables entre sí. */
   .rt { font-weight: 700; font-size: 11px; cursor: help; white-space: nowrap; }
@@ -248,6 +257,14 @@
       <span class="com-lbl">%</span>
       <button class="com-lado on" data-lado="compra" onclick="setComisionLado('compra')">Compra</button>
       <button class="com-lado" data-lado="venta" onclick="setComisionLado('venta')">Venta</button>
+    </div>
+    <div class="sep-v"></div>
+    <div class="com-box" title="Elegí qué columnas ver: la tabla tiene más de 20 y rara vez hacen falta todas juntas.">
+      <span class="com-lbl">Vista</span>
+      <button class="vista-btn" data-vista="operar" onclick="setVista('operar')">Operar</button>
+      <button class="vista-btn" data-vista="rendimiento" onclick="setVista('rendimiento')">Rendimiento</button>
+      <button class="vista-btn" data-vista="ficha" onclick="setVista('ficha')">Ficha</button>
+      <button class="vista-btn" data-vista="completa" onclick="setVista('completa')">Completa</button>
     </div>
   </div>
 
@@ -1220,15 +1237,56 @@ function setLey(l) {
 
 // ── ORDENAMIENTO DE COLUMNAS (dentro de cada grupo de bonos) ──
 // Columnas: label + ancho % (para colgroup) + accessor de orden + cómo se dibuja la celda.
+// Segunda línea del precio: lo que realmente se ejecuta, con la comisión puesta.
+function subPrecioEjec(f){
+  if (!comisionPct || !f.m.precio || !f.mc || !isFinite(f.mc.precio)) return '';
+  const flecha = comisionLado === 'compra' ? '▲' : '▼';
+  return `<span class="pexec" title="Precio de ejecución ${comisionLado} (comisión ${String(comisionPct).replace('.',',')}%)">${flecha} ${f.mc.precio.toFixed(2)}</span>`;
+}
+// Segunda línea de la TEA: la TIR al precio de ejecución. SÓLO en compra — comprando esa es
+// la tasa que uno se lleva. Vendiendo no: la TIR sobre el precio neto del vendedor es la que
+// gana quien compra, así que mostrarla como mejora sería engañoso; ahí importa el precio.
+function subTeaNeta(f){
+  if (comisionLado !== 'compra' || !comisionPct) return '';
+  const a = f.m && f.m.tea, b = f.mc && f.mc.tea;
+  if (a == null || b == null || !isFinite(b)) return '';
+  const pb = Math.round((b - a) * 100);
+  return `<span class="tneta" title="TEA comprando a ${f.mc.precio.toFixed(2)} (${pb} pb por la comisión)">${b.toFixed(2)}% <i>${pb}pb</i></span>`;
+}
+
+// ── VISTAS: qué columnas se muestran ──────────────────────────
+// Más de 20 columnas juntas no se leen. Cada vista deja sólo lo que hace falta para una
+// pregunta concreta. "Completa" mantiene el comportamiento anterior.
+const VISTAS = {
+  operar:      { label:'Operar',      cols:['ticker','nombre','divisa','precio','ultop','voldia','tea','md','paridad','dias'] },
+  rendimiento: { label:'Rendimiento', cols:['ticker','nombre','precio','tna','tea','paridad','md','day','wtd','mtd','ytd'] },
+  ficha:       { label:'Ficha',       cols:['ticker','nombre','industria','rating','divisa','venc','dias','period','amort'] },
+  completa:    { label:'Completa',    cols:null },
+};
+let vistaActiva = 'operar';
+try { const v = localStorage.getItem('monitor_vista'); if (v && VISTAS[v]) vistaActiva = v; } catch {}
+function setVista(v){
+  if (!VISTAS[v]) return;
+  vistaActiva = v;
+  try { localStorage.setItem('monitor_vista', v); } catch {}
+  document.querySelectorAll('.vista-btn').forEach(b => b.classList.toggle('on', b.dataset.vista === v));
+  renderTabla();
+}
+function initVistaUI(){
+  document.querySelectorAll('.vista-btn').forEach(b => b.classList.toggle('on', b.dataset.vista === vistaActiva));
+}
+function colEnVista(k){
+  const v = VISTAS[vistaActiva];
+  return !v || !v.cols || v.cols.includes(k);
+}
+
 const COLS = [
   { k:'ticker',  label:'Ticker',      w:7.0,  left:true, get:f=>f.inst.ticker,     cell:f=>`<td class="td-ticker">${f.inst.ticker}</td>` },
   { k:'nombre',  label:'Nombre',      w:11.0, left:true, get:f=>f.inst.nombre||'', cell:f=>`<td class="td-nombre">${f.inst.nombre||''}</td>` },
   { k:'industria', label:'Industria', w:10.5, left:true, get:f=>industriaDe(f.inst), cell:f=>`<td class="td-nombre">${industriaDe(f.inst)}</td>` },
   { k:'rating',  label:'Rating',      w:16.0, get:f=>ratingRank(f.inst), cell:f=>ratingCell(f.inst) },
   { k:'divisa',  label:'Divisa de pago', w:8.0, left:true, get:f=>f.inst.divisa||'', cell:f=>`<td>${f.inst.divisa||'—'}</td>` },
-  { k:'precio',  label:'Precio',      w:9.2,  get:f=>f.m.precio, cell:f=>`<td><input class="precio-cell-input${f.m.precio?' has-value':''}" id="inp-${f.inst.ticker}" type="number" step="0.01" placeholder="—" value="${f.m.precio?f.m.precio.toFixed(2):''}" oninput="onPrecioChange('${f.inst.ticker}', this.value)"></td>` },
-  { k:'precioCom', label:'P. ejec.', w:8.0, get:f=>f.mc.precio, cell:f=>`<td title="Precio de ejecución (${comisionLado}, comisión ${String(comisionPct).replace('.',',')}%)">${f.mc.precio!=null&&isFinite(f.mc.precio)?fmtNum(f.mc.precio,2):'<span class=\"no-p\">—</span>'}</td>` },
-  { k:'teaCom',    label:'TEA ejec.',  w:8.5, get:f=>f.mc.tea, cell:f=>celdaTeaCom(f) },
+  { k:'precio',  label:'Precio',      w:9.2, get:f=>f.m.precio, cell:f=>`<td><div class="pcell"><input class="precio-cell-input${f.m.precio?' has-value':''}" id="inp-${f.inst.ticker}" type="number" step="0.01" placeholder="—" value="${f.m.precio?f.m.precio.toFixed(2):''}" oninput="onPrecioChange('${f.inst.ticker}', this.value)">${subPrecioEjec(f)}</div></td>` },
   { k:'ultop',   label:'Últ. op.',    w:9.0,  get:f=>actUltOpMs(f.inst.ticker), cell:f=>`<td style="font-size:11px">${fmtUltOp(actUltOp(f.inst.ticker))}</td>` },
   { k:'voldia',  label:'Vol. día (nom)', w:8.5, get:f=>actVol(f.inst.ticker), cell:f=>`<td>${(()=>{const v=actVol(f.inst.ticker);return v==null?'<span class="no-p">—</span>':fmtMiles(v);})()}</td>` },
   { k:'venc',    label:'Vencimiento', w:9.3,  get:f=>f.dias,     cell:f=>`<td>${fmtDate(f.inst.venc)}</td>` },
@@ -1237,7 +1295,7 @@ const COLS = [
   { k:'period',  label:'Periodicidad', w:9.0, left:true, get:f=>periodicidadDe(f.inst), cell:f=>`<td class="td-nombre">${periodicidadDe(f.inst)}</td>` },
   { k:'amort',   label:'Amortización', w:10.0, left:true, get:f=>tipoAmortDe(f.inst), cell:f=>`<td class="td-nombre">${tipoAmortDe(f.inst)}</td>` },
   { k:'tna',     label:'TNA %',       w:6.4,  get:f=>f.m.tna,     cell:f=>`<td>${dash(f.m.tna,2,'%','val-blue')}</td>` },
-  { k:'tea',     label:'TEA %',       w:6.7,  get:f=>f.m.tea,     cell:f=>`<td>${dash(f.m.tea,2,'%','val-cyan')}</td>` },
+  { k:'tea',     label:'TEA %',       w:6.7,  get:f=>f.m.tea,     cell:f=>`<td>${dash(f.m.tea,2,'%','val-cyan')}${subTeaNeta(f)}</td>` },
   { k:'paridad', label:'Paridad %',   w:8.0,  get:f=>f.m.paridad, cell:f=>`<td>${dash(f.m.paridad,2,'%','val-text3')}</td>` },
   { k:'day',     label:'DAY %',       w:6.1,  get:f=>f.day, cell:f=>`<td>${renderVariacion(f.day)}</td>` },
   { k:'wtd',     label:'WTD %',       w:6.1,  get:f=>f.wtd, cell:f=>`<td>${renderVariacion(f.wtd)}</td>` },
@@ -1247,7 +1305,9 @@ const COLS = [
 // Anchos de columna EDITABLES (drag en el borde del header). Persisten en localStorage.
 let colWidths = COLS.map(c => c.w);
 try { const s = JSON.parse(localStorage.getItem('ons_col_widths') || 'null'); if (Array.isArray(s) && s.length === COLS.length) colWidths = s; } catch { /* default */ }
-function colgroupHTML(){ return colWidths.map(w => `<col style="width:${w}%">`).join(''); }
+// Columnas visibles con su índice global (para colWidths y el resize).
+function colsVis(){ return COLS.map((c, i) => ({ c, i })).filter(({ c }) => colEnVista(c.k)); }
+function colgroupHTML(){ return colsVis().map(({ c, i }) => `<col data-k="${c.k}" style="width:${colWidths[i]}%">`).join(''); }
 
 // ── FILTROS por columna ───────────────────────────────────────
 let colFilters = {};   // key de columna -> texto del filtro
@@ -1284,16 +1344,17 @@ function aplicarFiltros(){
 }
 
 // ── RESIZE de columnas (drag en el borde derecho del header) ──
-function iniciarResize(e, i){
+function iniciarResize(e, k){
   e.stopPropagation(); e.preventDefault();
   const startX = e.clientX;
   const tabla = e.target.closest('table');
   const totalW = tabla.offsetWidth || 1;
-  const startW = tabla.querySelectorAll('colgroup col')[i]?.offsetWidth || (colWidths[i]/100*totalW);
+  const idx = COLS.findIndex(c => c.k === k);
+  const startW = tabla.querySelector(`colgroup col[data-k="${k}"]`)?.offsetWidth || (colWidths[idx]/100*totalW);
   const mover = (ev) => {
     const pct = Math.max(2.5, (startW + (ev.clientX - startX)) / totalW * 100);
-    colWidths[i] = pct;
-    document.querySelectorAll('table.tabla-grupo colgroup').forEach(cg => { if (cg.children[i]) cg.children[i].style.width = pct + '%'; });
+    colWidths[idx] = pct;
+    document.querySelectorAll(`table.tabla-grupo colgroup col[data-k="${k}"]`).forEach(c => { c.style.width = pct + '%'; });
   };
   const soltar = () => { document.removeEventListener('mousemove', mover); document.removeEventListener('mouseup', soltar); try { localStorage.setItem('ons_col_widths', JSON.stringify(colWidths)); } catch {} };
   document.addEventListener('mousemove', mover); document.addEventListener('mouseup', soltar);
@@ -1346,20 +1407,21 @@ function renderTabla() {
   }
 
   // 3) Render: una <table> por grupo, con su header propio (título + columnas ordenables)
-  const nCols = COLS.length;
+  const cv = colsVis();
+  const nCols = cv.length;
   let html = '';
   for (const g of grupos) {
     const label = GRUPOS.find(x => x.key === g.key)?.label || g.key;
     const st = sortState[g.key];
     if (st) { const col = COLS.find(c => c.k === st.col); if (col) g.filas.sort((a, b) => cmpVal(col.get(a), col.get(b), st.dir)); }
-    const ths = COLS.map((c, i) => {
+    const ths = cv.map(({ c }) => {
       const on = st && st.col === c.k;
       const arrow = on ? (st.dir === 'desc' ? ' ▼' : ' ▲') : '';
-      return `<th class="${c.left ? 'th-left ' : ''}${on ? 'sorted' : ''}" onclick="ordenarGrupo('${g.key}','${c.k}')">${c.label}<span class="sort-arrow">${arrow}</span><span class="col-resize" onmousedown="iniciarResize(event,${i})" onclick="event.stopPropagation()"></span></th>`;
+      return `<th class="${c.left ? 'th-left ' : ''}${on ? 'sorted' : ''}" onclick="ordenarGrupo('${g.key}','${c.k}')">${c.label}<span class="sort-arrow">${arrow}</span><span class="col-resize" onmousedown="iniciarResize(event,'${c.k}')" onclick="event.stopPropagation()"></span></th>`;
     }).join('');
-    const filtros = COLS.map(c => `<th class="filtro-th"><input class="filtro-input" data-fcol="${c.k}" value="${(colFilters[c.k]||'').replace(/"/g,'&quot;')}" oninput="onFiltro('${c.k}', this.value)" placeholder="⌕"></th>`).join('');
-    const rows = g.filas.map(f => { _filasPorTk[f.inst.ticker] = f; return `<tr class="data-row" data-tk="${f.inst.ticker}">${COLS.map(c => c.cell(f)).join('')}</tr>`; }).join('');
-    html += `<table class="tabla-grupo"><colgroup>${colgroupHTML()}</colgroup>
+    const filtros = cv.map(({ c }) => `<th class="filtro-th"><input class="filtro-input" data-fcol="${c.k}" value="${(colFilters[c.k]||'').replace(/"/g,'&quot;')}" oninput="onFiltro('${c.k}', this.value)" placeholder="⌕"></th>`).join('');
+    const rows = g.filas.map(f => { _filasPorTk[f.inst.ticker] = f; return `<tr class="data-row" data-tk="${f.inst.ticker}">${cv.map(({ c }) => c.cell(f)).join('')}</tr>`; }).join('');
+    html += `<table class="tabla-grupo" style="min-width:${Math.max(760, nCols*96)}px"><colgroup>${colgroupHTML()}</colgroup>
       <thead>
         <tr><th class="grupo-titulo" colspan="${nCols}">${label}</th></tr>
         <tr class="col-header-row">${ths}</tr>
@@ -2328,7 +2390,7 @@ async function cargarExcelGitHub() {
     showAlert('No se pudo cargar Instrumentos.xlsx: ' + e.message);
   }
 }
-initComisionUI();
+initComisionUI(); initVistaUI();
 cargarExcelGitHub();
 </script>
 </body>
